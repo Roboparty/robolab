@@ -32,6 +32,7 @@
 from __future__ import annotations
 
 from dataclasses import MISSING
+from typing import Literal
 
 from isaaclab.utils import configclass
 
@@ -52,4 +53,10 @@ class MotionDataTermCfg:
     
     motion_data_weights: dict[str, float] = MISSING
     """Weights for the motion data in this term."""
-    
+
+    quaternion_order: Literal["wxyz", "xyzw"] = "wxyz"
+    """Fallback order for legacy files without quaternion_order metadata."""
+
+    key_body_names: list[str] | None = None
+    """Desired key-body order when motion files include key_body_names metadata."""
+

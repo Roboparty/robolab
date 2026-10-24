@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import copy
 import torch
 from typing import Any
 from collections.abc import Sequence
@@ -80,11 +81,12 @@ class AnimationEnv(ManagerBasedRLEnv):
 
         # check if we need to do rendering within the physics loop
         # note: checked here once to avoid multiple checks within the loop
-        is_rendering = self.sim.has_gui() or self.sim.has_rtx_sensors()
+        is_rendering = self.sim.is_rendering
 
         # perform physics stepping
-        for _ in range(self.cfg.decimation):
-            self._sim_step_counter += 1
+        num_sim_steps = 1 if self._physics_handles_decimation else self.cfg.decimation
+        for _ in range(num_sim_steps):
+            self._sim_step_counter += self.cfg.decimation if self._physics_handles_decimation else 1
             # set actions into buffers
             self.action_manager.apply_action()
             # set actions into simulator
@@ -96,9 +98,9 @@ class AnimationEnv(ManagerBasedRLEnv):
             # note: we assume the render interval to be the shortest accepted rendering interval.
             #    If a camera needs rendering at a faster frequency, this will lead to unexpected behavior.
             if self._sim_step_counter % self.cfg.sim.render_interval == 0 and is_rendering:
-                self.sim.render()
+                self.sim.render(skip_app_pumping=not self.render_enabled)
             # update buffers at sim dt
-            self.scene.update(dt=self.physics_dt)
+            self.scene.update(dt=self.step_dt if self._physics_handles_decimation else self.physics_dt)
         
         # post-step:
         # -- update animation manager
@@ -119,7 +121,10 @@ class AnimationEnv(ManagerBasedRLEnv):
             self.recorder_manager.record_post_step()
 
         # -- reset envs that terminated/timed-out and log the episode information
-        reset_env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
+        reset_env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1).int()
+        manual_reset_requested = self.sim.consume_reset_request()
+        if self.cfg.compute_final_obs and (len(reset_env_ids) > 0 or manual_reset_requested):
+            self.extras["final_obs"] = self._compute_final_observations()
         if len(reset_env_ids) > 0:
             # trigger recorder terms for pre-reset calls
             self.recorder_manager.record_pre_reset(reset_env_ids)
@@ -127,17 +132,30 @@ class AnimationEnv(ManagerBasedRLEnv):
             self._reset_idx(reset_env_ids)
 
             # if sensors are added to the scene, make sure we render to reflect changes in reset
-            if self.sim.has_rtx_sensors() and self.cfg.rerender_on_reset:
-                self.sim.render()
+            if self.render_enabled and is_rendering and self.has_rtx_sensors:
+                for _ in range(self.cfg.num_rerenders_on_reset):
+                    self.sim.render()
 
             # trigger recorder terms for post-reset calls
             self.recorder_manager.record_post_reset(reset_env_ids)
+
+        if manual_reset_requested:
+            pending = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+            pending[reset_env_ids] = False
+            manual_reset_ids = pending.nonzero(as_tuple=False).squeeze(-1).int()
+            if len(manual_reset_ids) > 0:
+                self.reset_terminated[manual_reset_ids] = True
+                self.recorder_manager.record_pre_reset(manual_reset_ids)
+                self._reset_idx(manual_reset_ids)
+                self.recorder_manager.record_post_reset(manual_reset_ids)
 
         # -- update command
         self.command_manager.compute(dt=self.step_dt)
         # -- step interval events
         if "interval" in self.event_manager.available_modes:
             self.event_manager.apply(mode="interval", dt=self.step_dt)
+        for recorder in self.video_recorders:
+            recorder.step()
         # -- compute observations
         # note: done after reset to get the correct observations for reset envs
         self.obs_buf = self.observation_manager.compute(update_history=True)
@@ -145,6 +163,25 @@ class AnimationEnv(ManagerBasedRLEnv):
         # return observations, rewards, resets and extras
         return self.obs_buf, self.reward_buf, self.reset_terminated, self.reset_time_outs, self.extras
 
+
+    def _compute_final_observations(self) -> VecEnvObs:
+        # Preview the terminal frame without advancing the live per-environment histories.
+        manager = self.observation_manager
+        histories = manager._group_obs_term_history_buffer
+        temporary_histories = {}
+        for group_name, group_buffers in histories.items():
+            temporary_histories[group_name] = {}
+            for term_name, buffer in group_buffers.items():
+                temporary_buffer = copy.copy(buffer)
+                temporary_buffer._num_pushes = buffer._num_pushes.clone()
+                if buffer._buffer is not None:
+                    temporary_buffer._buffer = buffer._buffer.clone()
+                temporary_histories[group_name][term_name] = temporary_buffer
+        manager._group_obs_term_history_buffer = temporary_histories
+        try:
+            return manager.compute(update_history=True)
+        finally:
+            manager._group_obs_term_history_buffer = histories
 
     def _reset_idx(self, env_ids: Sequence[int]):
         # -- animation manager

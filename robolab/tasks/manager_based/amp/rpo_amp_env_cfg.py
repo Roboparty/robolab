@@ -47,7 +47,7 @@ import isaaclab.terrains as terrain_gen
 from robolab.assets.robots.roboparty import RPO_CFG
 from robolab import ROBOLAB_ROOT_DIR
 
-# NOTE: KEY_BODY_NAMES must match lab_key_body_names in robolab/scripts/tools/retarget/config/rpo.yaml
+# Motion key bodies are resolved by name when metadata is present.
 KEY_BODY_NAMES = [
     "left_ankle_roll_link", 
     "right_ankle_roll_link",
@@ -170,8 +170,9 @@ class RPOAmpEnvCfg(AmpEnvCfg):
         # ------------------------------------------------------
         # motion data
         # ------------------------------------------------------
+        self.motion_data.motion_dataset.key_body_names = KEY_BODY_NAMES
         self.motion_data.motion_dataset.motion_data_dir = os.path.join(
-            ROBOLAB_ROOT_DIR, "data", "motions", "rpo_lab"
+            ROBOLAB_ROOT_DIR, "data", "motions", "rpo_amp"
         )
         self.motion_data.motion_dataset.motion_data_weights={
             

@@ -104,12 +104,12 @@ class AnimationTerm(ManagerTermBase):
             )
             self.key_body_marker: VisualizationMarkers = VisualizationMarkers(marker_cfg)
 
-    def reset(self, env_ids: Sequence[int] | None = None):
+    def reset(self, env_ids: Sequence[int] | slice | None = None):
         if env_ids is None:
             return
         
         # resample motion ids for the reset envs
-        self.motion_ids[env_ids] = self.motion_data_term.sample_motions(len(env_ids))
+        self.motion_ids[env_ids] = self.motion_data_term.sample_motions(self.motion_ids[env_ids].numel())
         self.motion_durations[env_ids] = self.motion_data_term.get_motion_durations(self.motion_ids[env_ids])
         
         truncate_time = self.num_steps * self._env.step_dt
@@ -151,7 +151,8 @@ class AnimationTerm(ManagerTermBase):
             env_ids = torch.arange(self.num_envs, device=self._env.device)
         
         # Flatten for batch processing
-        num_queries = len(env_ids) * self.num_steps
+        num_selected = self.motion_ids[env_ids].numel()
+        num_queries = num_selected * self.num_steps
         motion_times_flat = self.motion_fetch_time[env_ids].reshape(-1)
         motion_ids_flat = self.motion_ids[env_ids].repeat_interleave(self.num_steps)
         
@@ -171,7 +172,7 @@ class AnimationTerm(ManagerTermBase):
                 buffer_name = f"{component}_buffer"
                 data = motion_data_dict[component]
                 # Reshape: (num_envs * num_steps, *) -> (num_envs, num_steps, *)
-                data_reshaped = data.view(len(env_ids), self.num_steps, *data.shape[1:])
+                data_reshaped = data.view(num_selected, self.num_steps, *data.shape[1:])
                 getattr(self, buffer_name)[env_ids, :, :] = data_reshaped
             
     def _visualize(self):
@@ -190,21 +191,21 @@ class AnimationTerm(ManagerTermBase):
         root_quat = self.root_quat_buffer[:, 0, :]    # (num_envs, 4)
         dof_pos = self.dof_pos_buffer[:, 0, :]        # (num_envs, num_dofs)
         
-        root_states = robot_anim.data.default_root_state.clone()
-        root_states[:, :3] = root_pos_w + self._env.scene.env_origins[:, :3] + self.vis_root_offset
-        root_states[:, 3:7] = root_quat
-        root_states[:, 7:10] = 0.0  # zero linear velocity
-        root_states[:, 10:13] = 0.0  # zero angular velocity
-        robot_anim.write_root_state_to_sim(root_states)
+        root_pose = robot_anim.data.default_root_pose.torch.clone()
+        root_pose[:, :3] = root_pos_w + self._env.scene.env_origins[:, :3] + self.vis_root_offset
+        root_pose[:, 3:7] = root_quat
+        robot_anim.write_root_pose_to_sim_index(root_pose=root_pose)
+        robot_anim.write_root_velocity_to_sim_index(root_velocity=torch.zeros_like(robot_anim.data.default_root_vel.torch))
         
-        joint_pos = robot_anim.data.default_joint_pos.clone()
+        joint_pos = robot_anim.data.default_joint_pos.torch.clone()
         joint_pos[:, :] = dof_pos
-        joint_vel = torch.zeros_like(robot_anim.data.default_joint_vel)
-        robot_anim.write_joint_state_to_sim(joint_pos, joint_vel)
+        joint_vel = torch.zeros_like(robot_anim.data.default_joint_vel.torch)
+        robot_anim.write_joint_position_to_sim_index(position=joint_pos)
+        robot_anim.write_joint_velocity_to_sim_index(velocity=joint_vel)
             
         key_body_pos_b = self.key_body_pos_b_buffer[:, 0, :, :]  # (num_envs, num_key_bodies, 3)
         num_key_bodies = key_body_pos_b.shape[1]
-        key_body_pos_w = root_states[:, :3].unsqueeze(1) + math_utils.quat_apply(
+        key_body_pos_w = root_pose[:, :3].unsqueeze(1) + math_utils.quat_apply(
             root_quat.unsqueeze(1).expand(-1, num_key_bodies, -1),
             key_body_pos_b
         )

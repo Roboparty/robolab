@@ -38,7 +38,6 @@ import isaaclab.utils.math as math_utils
 import isaaclab.utils.string as string_utils
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.sensors import FrameTransformer, RayCaster
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
@@ -52,7 +51,7 @@ def root_local_rot_tan_norm(
 ) -> torch.Tensor:
     robot: Articulation = env.scene[asset_cfg.name]
     
-    root_quat = robot.data.root_quat_w
+    root_quat = robot.data.root_quat_w.torch
     yaw_quat = math_utils.yaw_quat(root_quat)
     
     root_quat_local = math_utils.quat_mul(math_utils.quat_conjugate(yaw_quat), root_quat)
@@ -116,7 +115,7 @@ def root_rot_tan_norm(
 ) -> torch.Tensor:
     robot: Articulation = env.scene[asset_cfg.name]
     
-    root_quat = robot.data.root_quat_w
+    root_quat = robot.data.root_quat_w.torch
     root_rotm = math_utils.matrix_from_quat(root_quat)
     
     # use the first and last column of the rotation matrix as the tangent and normal vectors
@@ -134,9 +133,9 @@ def key_body_pos_b(
 
     robot: Articulation = env.scene[asset_cfg.name]
     
-    key_body_pos_w = robot.data.body_pos_w[:, asset_cfg.body_ids, :]  # shape: (num_envs, M, 3)
-    root_pos_w = robot.data.root_pos_w      # shape: (num_envs, 3).
-    root_quat = robot.data.root_quat_w    # shape: (num_envs, 4), w, x, y, z order.
+    key_body_pos_w = robot.data.body_pos_w.torch[:, asset_cfg.body_ids, :]  # shape: (num_envs, M, 3)
+    root_pos_w = robot.data.root_pos_w.torch      # shape: (num_envs, 3).
+    root_quat = robot.data.root_quat_w.torch    # shape: (num_envs, 4), x, y, z, w order.
     
     num_key_bodies = key_body_pos_w.shape[1]
     num_envs = root_pos_w.shape[0]
@@ -178,7 +177,7 @@ def ref_root_pos_error(
     animation_term: AnimationTerm = env.animation_manager.get_term(animation)
     
     ref_root_pos_w = animation_term.get_root_pos_w()  # shape: (num_envs, num_steps, 3)
-    root_pos_w = robot.data.root_pos_w - env.scene.env_origins  # shape: (num_envs, 3)
+    root_pos_w = robot.data.root_pos_w.torch - env.scene.env_origins  # shape: (num_envs, 3)
     
     num_envs = root_pos_w.shape[0]
     
@@ -303,4 +302,3 @@ def ref_key_body_pos_b(
         num_envs = ref_key_body_pos_b.shape[0]
         num_steps = ref_key_body_pos_b.shape[1]
         return ref_key_body_pos_b.reshape(num_envs, num_steps, -1)
-

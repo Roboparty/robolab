@@ -78,7 +78,7 @@ def compute_symmetric_states(
     if obs is not None:
         batch_size = obs.batch_size[0]
         # since we have 2 different symmetries, we need to augment the batch size by 2
-        obs_aug = obs.repeat(2)
+        obs_aug = obs.repeat(2, *([1] * (obs.batch_dims - 1)))
 
         # policy observation group
         # -- original

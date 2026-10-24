@@ -29,7 +29,8 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from isaaclab_tasks.manager_based.locomotion.velocity.mdp import *
+from isaaclab.envs.mdp import *
+from isaaclab_tasks.core.velocity.mdp import *
 
 from .observations import *
 from .rewards import *

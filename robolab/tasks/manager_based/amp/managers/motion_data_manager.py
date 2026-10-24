@@ -50,7 +50,7 @@ from .motion_data_term_cfg import MotionDataTermCfg
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
 
-from robolab.utils.math import vel_forward_diff, ang_vel_from_quat_diff, quat_slerp, linear_interpolate, calc_frame_blend
+from robolab.utils.math import vel_forward_diff, ang_vel_from_quat_diff, quat_slerp, linear_interpolate, calc_frame_blend, quaternion_to_xyzw
 
 
 class LoopMode(enum.Enum):
@@ -133,8 +133,10 @@ class MotionDataTerm(ManagerTermBase):
             # root position in world frame, shape (num_frames, 3)
             root_pos_w = torch.from_numpy(motion_raw_data["root_pos"]).to(self.device).float()
             root_pos_w.requires_grad_(False)
-            # root rotation (quaternion) from world frame to body frame, shape (num_frames, 4), in (w, x, y, z) format
+            # Convert legacy motion files once, before any runtime quaternion math.
             root_quat = torch.from_numpy(motion_raw_data["root_rot"]).to(self.device).float()
+            quaternion_order = str(np.asarray(motion_raw_data.get("quaternion_order", self.cfg.quaternion_order)).item())
+            root_quat = quaternion_to_xyzw(root_quat, quaternion_order)
             root_quat.requires_grad_(False)
             
             # root velocity in world frame, shape (num_frames, 3)
@@ -147,6 +149,14 @@ class MotionDataTerm(ManagerTermBase):
             
             # dof position, shape (num_frames, num_dofs)
             dof_pos = torch.from_numpy(motion_raw_data["dof_pos"]).to(self.device).float()
+            source_joint_names = motion_raw_data.get("joint_names", motion_raw_data.get("joint_order"))
+            if source_joint_names is not None:
+                source_joint_names = list(source_joint_names)
+                target_joint_names = self._env.scene["robot"].joint_names
+                missing = set(target_joint_names) - set(source_joint_names)
+                if missing:
+                    raise ValueError(f"Motion {motion_file} is missing robot joints: {sorted(missing)}")
+                dof_pos = dof_pos[:, [source_joint_names.index(name) for name in target_joint_names]]
             dof_pos.requires_grad_(False)
             
             # dof velocity, shape (num_frames, num_dofs)
@@ -155,6 +165,13 @@ class MotionDataTerm(ManagerTermBase):
             
             # key body position in world frame, shape (num_frames, num_key_bodies, 3)
             key_body_pos_w = torch.from_numpy(motion_raw_data["key_body_pos"]).to(self.device).float()
+            source_body_names = motion_raw_data.get("key_body_names")
+            if source_body_names is not None and self.cfg.key_body_names is not None:
+                source_body_names = list(source_body_names)
+                missing = set(self.cfg.key_body_names) - set(source_body_names)
+                if missing:
+                    raise ValueError(f"Motion {motion_file} is missing key bodies: {sorted(missing)}")
+                key_body_pos_w = key_body_pos_w[:, [source_body_names.index(name) for name in self.cfg.key_body_names]]
             key_body_pos_w.requires_grad_(False)
             
             self.root_pos_w.append(root_pos_w)
@@ -472,4 +489,4 @@ def calc_phase(times: torch.Tensor, motion_duration: torch.Tensor, loop_mode: to
     return phase
 
         
-        
+
