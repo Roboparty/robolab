@@ -120,14 +120,19 @@ def feet_slide(
     env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
-    contacts = contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
+    contacts = contact_sensor.data.net_normal_forces_w_history.torch[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
     asset: RigidObject = env.scene[asset_cfg.name]
+    selected_names = (
+        contact_sensor.body_names[sensor_cfg.body_ids] if isinstance(sensor_cfg.body_ids, slice)
+        else contact_sensor.find_bodies(sensor_cfg.body_names, preserve_order=sensor_cfg.preserve_order)[1]
+    )
+    asset_body_ids = [asset.body_names.index(name) for name in selected_names]
 
-    cur_footvel_translated = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :] - asset.data.root_lin_vel_w[:, :].unsqueeze(1)
-    footvel_in_body_frame = torch.zeros(env.num_envs, len(asset_cfg.body_ids), 3, device=env.device)
-    for i in range(len(asset_cfg.body_ids)):
+    cur_footvel_translated = asset.data.body_lin_vel_w.torch[:, asset_body_ids, :] - asset.data.root_lin_vel_w.torch[:, :].unsqueeze(1)
+    footvel_in_body_frame = torch.zeros(env.num_envs, len(asset_body_ids), 3, device=env.device)
+    for i in range(len(asset_body_ids)):
         footvel_in_body_frame[:, i, :] = math_utils.quat_apply_inverse(
-            asset.data.root_quat_w, cur_footvel_translated[:, i, :]
+            asset.data.root_quat_w.torch, cur_footvel_translated[:, i, :]
         )
     foot_leteral_vel = torch.sqrt(torch.sum(torch.square(footvel_in_body_frame[:, :, :2]), dim=2)).view(
         env.num_envs, -1
@@ -151,12 +156,12 @@ def stand_still_after_motion(
     asset = env.scene["robot"]
     
     pos_reward = pos_weight * torch.sum(torch.abs(
-        asset.data.joint_pos[:, pos_cfg.joint_ids] - asset.data.default_joint_pos[:, pos_cfg.joint_ids]), dim=1
+        asset.data.joint_pos.torch[:, pos_cfg.joint_ids] - asset.data.default_joint_pos.torch[:, pos_cfg.joint_ids]), dim=1
     )
-    vel_reward = vel_weight * torch.sum(torch.abs(asset.data.joint_vel[:, vel_cfg.joint_ids]), dim=1)
+    vel_reward = vel_weight * torch.sum(torch.abs(asset.data.joint_vel.torch[:, vel_cfg.joint_ids]), dim=1)
     
     reward = pos_reward + vel_reward
-    reward *= torch.clamp(-asset.data.projected_gravity_b[:, 2], 0, 0.7) / 0.7
+    reward *= torch.clamp(-asset.data.projected_gravity_b.torch[:, 2], 0, 0.7) / 0.7
     
     # Only apply when motion has ended
     reward = torch.where(command.motion_ended, reward, torch.zeros_like(reward))

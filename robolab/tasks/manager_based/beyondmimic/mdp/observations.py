@@ -113,3 +113,16 @@ def motion_anchor_ori_b(env: ManagerBasedEnv, command_name: str) -> torch.Tensor
     )
     mat = matrix_from_quat(ori)
     return mat[..., :2].reshape(mat.shape[0], -1)
+
+
+def motion_preview(env, command_name: str, frame_offsets: tuple[int, ...] = (1, 2, 5, 10, 20)) -> torch.Tensor:
+    """Return offset-major future joint-position errors, clamped at clip end."""
+    if not frame_offsets or any(isinstance(offset, bool) or not isinstance(offset, int) for offset in frame_offsets):
+        raise ValueError("frame_offsets must contain non-negative integers.")
+    if any(offset < 0 for offset in frame_offsets):
+        raise ValueError("frame_offsets must contain non-negative integers.")
+    command = env.command_manager.get_term(command_name)
+    offsets = torch.tensor(frame_offsets, dtype=torch.long, device=command.time_steps.device)
+    indices = (command.time_steps[:, None] + offsets[None, :]).clamp(max=command.motion.time_step_total - 1)
+    targets = command.motion.joint_pos[indices]
+    return (targets - command.robot_joint_pos[:, None, :]).flatten(start_dim=1)

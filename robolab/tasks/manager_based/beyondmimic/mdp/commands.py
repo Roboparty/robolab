@@ -54,13 +54,18 @@ from isaaclab.utils.math import (
     sample_uniform,
     yaw_quat,
 )
+from robolab.utils.math import quaternion_to_xyzw
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
 class MotionLoader:
-    def __init__(self, motion_file: str, body_indexes: Sequence[int], device: str = "cpu"):
+    def __init__(
+        self, motion_file: str, body_indexes: Sequence[int], device: str = "cpu",
+        quaternion_order: str = "wxyz", joint_names: Sequence[str] | None = None,
+        body_names: Sequence[str] | None = None,
+    ):
         assert os.path.isfile(motion_file), f"Invalid file path: {motion_file}"
         data = np.load(motion_file)
         self.fps = data["fps"]
@@ -68,8 +73,22 @@ class MotionLoader:
         self.joint_vel = torch.tensor(data["joint_vel"], dtype=torch.float32, device=device)
         self._body_pos_w = torch.tensor(data["body_pos_w"], dtype=torch.float32, device=device)
         self._body_quat_w = torch.tensor(data["body_quat_w"], dtype=torch.float32, device=device)
+        source_order = str(np.asarray(data.get("quaternion_order", quaternion_order)).item())
+        self._body_quat_w = quaternion_to_xyzw(self._body_quat_w, source_order)
         self._body_lin_vel_w = torch.tensor(data["body_lin_vel_w"], dtype=torch.float32, device=device)
         self._body_ang_vel_w = torch.tensor(data["body_ang_vel_w"], dtype=torch.float32, device=device)
+        for target_names, metadata_keys, attributes in (
+            (joint_names, ("joint_names", "joint_order"), ("joint_pos", "joint_vel")),
+            (body_names, ("body_names", "body_order"), ("_body_pos_w", "_body_quat_w", "_body_lin_vel_w", "_body_ang_vel_w")),
+        ):
+            source_names = next((list(data[key].astype(str)) for key in metadata_keys if key in data), None)
+            if source_names is not None and target_names is not None:
+                missing = set(target_names) - set(source_names)
+                if missing:
+                    raise ValueError(f"Motion {motion_file} is missing robot elements: {sorted(missing)}")
+                indices = [source_names.index(name) for name in target_names]
+                for attribute in attributes:
+                    setattr(self, attribute, getattr(self, attribute)[:, indices])
         self._body_indexes = body_indexes
         self.time_step_total = self.joint_pos.shape[0]
 
@@ -89,6 +108,22 @@ class MotionLoader:
     def body_ang_vel_w(self) -> torch.Tensor:
         return self._body_ang_vel_w[:, self._body_indexes]
 
+    @property
+    def root_body_pos_w(self) -> torch.Tensor:
+        return self._body_pos_w[:, 0]
+
+    @property
+    def root_body_quat_w(self) -> torch.Tensor:
+        return self._body_quat_w[:, 0]
+
+    @property
+    def root_body_lin_vel_w(self) -> torch.Tensor:
+        return self._body_lin_vel_w[:, 0]
+
+    @property
+    def root_body_ang_vel_w(self) -> torch.Tensor:
+        return self._body_ang_vel_w[:, 0]
+
 
 class MotionCommand(CommandTerm):
     cfg: MotionCommandCfg
@@ -103,11 +138,15 @@ class MotionCommand(CommandTerm):
             self.robot.find_bodies(self.cfg.body_names, preserve_order=True)[0], dtype=torch.long, device=self.device
         )
 
-        self.motion = MotionLoader(self.cfg.motion_file, self.body_indexes, device=self.device)
+        self.motion = MotionLoader(
+            self.cfg.motion_file, self.body_indexes, device=self.device,
+            quaternion_order=self.cfg.quaternion_order,
+            joint_names=self.robot.joint_names, body_names=self.robot.body_names,
+        )
         self.time_steps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.body_pos_relative_w = torch.zeros(self.num_envs, len(cfg.body_names), 3, device=self.device)
         self.body_quat_relative_w = torch.zeros(self.num_envs, len(cfg.body_names), 4, device=self.device)
-        self.body_quat_relative_w[:, :, 0] = 1.0
+        self.body_quat_relative_w[:, :, 3] = 1.0
 
         self.bin_count = int(self.motion.time_step_total // (1 / (env.cfg.decimation * env.cfg.sim.dt))) + 1
         self.bin_failed_count = torch.zeros(self.bin_count, dtype=torch.float, device=self.device)
@@ -179,43 +218,43 @@ class MotionCommand(CommandTerm):
 
     @property
     def robot_joint_pos(self) -> torch.Tensor:
-        return self.robot.data.joint_pos
+        return self.robot.data.joint_pos.torch
 
     @property
     def robot_joint_vel(self) -> torch.Tensor:
-        return self.robot.data.joint_vel
+        return self.robot.data.joint_vel.torch
 
     @property
     def robot_body_pos_w(self) -> torch.Tensor:
-        return self.robot.data.body_pos_w[:, self.body_indexes]
+        return self.robot.data.body_pos_w.torch[:, self.body_indexes]
 
     @property
     def robot_body_quat_w(self) -> torch.Tensor:
-        return self.robot.data.body_quat_w[:, self.body_indexes]
+        return self.robot.data.body_quat_w.torch[:, self.body_indexes]
 
     @property
     def robot_body_lin_vel_w(self) -> torch.Tensor:
-        return self.robot.data.body_lin_vel_w[:, self.body_indexes]
+        return self.robot.data.body_lin_vel_w.torch[:, self.body_indexes]
 
     @property
     def robot_body_ang_vel_w(self) -> torch.Tensor:
-        return self.robot.data.body_ang_vel_w[:, self.body_indexes]
+        return self.robot.data.body_ang_vel_w.torch[:, self.body_indexes]
 
     @property
     def robot_anchor_pos_w(self) -> torch.Tensor:
-        return self.robot.data.body_pos_w[:, self.robot_anchor_body_index]
+        return self.robot.data.body_pos_w.torch[:, self.robot_anchor_body_index]
 
     @property
     def robot_anchor_quat_w(self) -> torch.Tensor:
-        return self.robot.data.body_quat_w[:, self.robot_anchor_body_index]
+        return self.robot.data.body_quat_w.torch[:, self.robot_anchor_body_index]
 
     @property
     def robot_anchor_lin_vel_w(self) -> torch.Tensor:
-        return self.robot.data.body_lin_vel_w[:, self.robot_anchor_body_index]
+        return self.robot.data.body_lin_vel_w.torch[:, self.robot_anchor_body_index]
 
     @property
     def robot_anchor_ang_vel_w(self) -> torch.Tensor:
-        return self.robot.data.body_ang_vel_w[:, self.robot_anchor_body_index]
+        return self.robot.data.body_ang_vel_w.torch[:, self.robot_anchor_body_index]
 
     def _update_metrics(self):
         self.metrics["error_anchor_pos"] = torch.norm(self.anchor_pos_w - self.robot_anchor_pos_w, dim=-1)
@@ -276,7 +315,9 @@ class MotionCommand(CommandTerm):
         self.metrics["sampling_top1_prob"][:] = pmax
         self.metrics["sampling_top1_bin"][:] = imax.float() / self.bin_count
 
-    def _resample_command(self, env_ids: Sequence[int]):
+    def _resample_command(self, env_ids: Sequence[int] | slice):
+        if isinstance(env_ids, slice):
+            env_ids = torch.arange(self.num_envs, device=self.device)[env_ids]
         if len(env_ids) == 0:
             return
         self._adaptive_sampling(env_ids)
@@ -284,10 +325,10 @@ class MotionCommand(CommandTerm):
         self.motion_ended[env_ids] = False
         self.steps_after_motion_end[env_ids] = 0
 
-        root_pos = self.body_pos_w[:, 0].clone()
-        root_ori = self.body_quat_w[:, 0].clone()
-        root_lin_vel = self.body_lin_vel_w[:, 0].clone()
-        root_ang_vel = self.body_ang_vel_w[:, 0].clone()
+        root_pos = self.motion.root_body_pos_w[self.time_steps] + self._env.scene.env_origins
+        root_ori = self.motion.root_body_quat_w[self.time_steps].clone()
+        root_lin_vel = self.motion.root_body_lin_vel_w[self.time_steps].clone()
+        root_ang_vel = self.motion.root_body_ang_vel_w[self.time_steps].clone()
 
         range_list = [self.cfg.pose_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
         ranges = torch.tensor(range_list, device=self.device)
@@ -305,14 +346,37 @@ class MotionCommand(CommandTerm):
         joint_vel = self.joint_vel.clone()
 
         joint_pos += sample_uniform(*self.cfg.joint_position_range, joint_pos.shape, joint_pos.device)
-        soft_joint_pos_limits = self.robot.data.soft_joint_pos_limits[env_ids]
+        soft_joint_pos_limits = self.robot.data.soft_joint_pos_limits.torch[env_ids]
         joint_pos[env_ids] = torch.clip(
             joint_pos[env_ids], soft_joint_pos_limits[:, :, 0], soft_joint_pos_limits[:, :, 1]
         )
-        self.robot.write_joint_state_to_sim(joint_pos[env_ids], joint_vel[env_ids], env_ids=env_ids)
-        self.robot.write_root_state_to_sim(
-            torch.cat([root_pos[env_ids], root_ori[env_ids], root_lin_vel[env_ids], root_ang_vel[env_ids]], dim=-1),
-            env_ids=env_ids,
+        self.robot.write_joint_position_to_sim_index(position=joint_pos[env_ids], env_ids=env_ids)
+        self.robot.write_joint_velocity_to_sim_index(velocity=joint_vel[env_ids], env_ids=env_ids)
+        self.robot.write_root_pose_to_sim_index(
+            root_pose=torch.cat([root_pos[env_ids], root_ori[env_ids]], dim=-1), env_ids=env_ids,
+        )
+        self.robot.write_root_velocity_to_sim_index(
+            root_velocity=torch.cat([root_lin_vel[env_ids], root_ang_vel[env_ids]], dim=-1), env_ids=env_ids,
+        )
+        # Pose writes invalidate the backend's FK cache. Reading the anchor here
+        # refreshes kinematics without stepping physics or advancing the motion.
+        self.refresh_body_reference(env_ids)
+
+    def refresh_body_reference(self, env_ids: Sequence[int] | None = None):
+        """Align references for the current motion frame without advancing it."""
+        if env_ids is not None and len(env_ids) == 0:
+            return
+        selection = slice(None) if env_ids is None else env_ids
+        num_bodies = len(self.cfg.body_names)
+        anchor_pos = self.anchor_pos_w[selection, None, :].expand(-1, num_bodies, -1)
+        anchor_quat = self.anchor_quat_w[selection, None, :].expand(-1, num_bodies, -1)
+        robot_anchor_quat = self.robot_anchor_quat_w[selection, None, :].expand(-1, num_bodies, -1)
+        aligned_pos = self.robot_anchor_pos_w[selection, None, :].expand(-1, num_bodies, -1).clone()
+        aligned_pos[..., 2] = anchor_pos[..., 2]
+        delta_ori = yaw_quat(quat_mul(robot_anchor_quat, quat_inv(anchor_quat)))
+        self.body_quat_relative_w[selection] = quat_mul(delta_ori, self.body_quat_w[selection])
+        self.body_pos_relative_w[selection] = aligned_pos + quat_apply(
+            delta_ori, self.body_pos_w[selection] - anchor_pos,
         )
 
     def _update_command(self):
@@ -328,17 +392,7 @@ class MotionCommand(CommandTerm):
             self.motion_ended[env_ids] = True
             self.steps_after_motion_end[self.motion_ended] += 1
 
-        anchor_pos_w_repeat = self.anchor_pos_w[:, None, :].repeat(1, len(self.cfg.body_names), 1)
-        anchor_quat_w_repeat = self.anchor_quat_w[:, None, :].repeat(1, len(self.cfg.body_names), 1)
-        robot_anchor_pos_w_repeat = self.robot_anchor_pos_w[:, None, :].repeat(1, len(self.cfg.body_names), 1)
-        robot_anchor_quat_w_repeat = self.robot_anchor_quat_w[:, None, :].repeat(1, len(self.cfg.body_names), 1)
-
-        delta_pos_w = robot_anchor_pos_w_repeat
-        delta_pos_w[..., 2] = anchor_pos_w_repeat[..., 2]
-        delta_ori_w = yaw_quat(quat_mul(robot_anchor_quat_w_repeat, quat_inv(anchor_quat_w_repeat)))
-
-        self.body_quat_relative_w = quat_mul(delta_ori_w, self.body_quat_w)
-        self.body_pos_relative_w = delta_pos_w + quat_apply(delta_ori_w, self.body_pos_w - anchor_pos_w_repeat)
+        self.refresh_body_reference()
 
         self.bin_failed_count = (
             self.cfg.adaptive_alpha * self._current_bin_failed + (1 - self.cfg.adaptive_alpha) * self.bin_failed_count
@@ -404,6 +458,8 @@ class MotionCommandCfg(CommandTermCfg):
     asset_name: str = MISSING
 
     motion_file: str = MISSING
+    quaternion_order: str = "wxyz"
+    """Fallback order for legacy files without quaternion_order metadata."""
     anchor_body_name: str = MISSING
     body_names: list[str] = MISSING
 

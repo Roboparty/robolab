@@ -81,8 +81,8 @@ class RPOGetupMimicEnvCfg(BeyondMimicEnvCfg):
             'right_elbow_yaw_link',
         ]
 
-        # Disable auto-reset when motion ends - robot will stay at last frame
-        self.commands.motion.reset_on_motion_end = False
+        # Resample the motion and robot state when the clip ends.
+        self.commands.motion.reset_on_motion_end = True
         
         self.rewards.motion_body_pos.weight = 2.0
         self.rewards.stand_still_after_motion = RewTerm(

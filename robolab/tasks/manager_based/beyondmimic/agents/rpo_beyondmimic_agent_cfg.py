@@ -34,7 +34,7 @@ from isaaclab.utils import configclass
 
 from isaaclab_rl.rsl_rl import (
     RslRlOnPolicyRunnerCfg, 
-    RslRlPpoActorCriticCfg, 
+    RslRlMLPModelCfg,
     RslRlPpoAlgorithmCfg,
 )
 
@@ -46,12 +46,16 @@ class RPOBeyondMimicPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     save_interval = 200
     experiment_name = "rpo_beyondmimic"
     wandb_project = "rpo_beyondmimic"
-    policy = RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
-        actor_hidden_dims=[512, 256, 128],
-        critic_hidden_dims=[512, 256, 128],
-        actor_obs_normalization=False,
-        critic_obs_normalization=False,
+    obs_groups = {"actor": ["policy"], "critic": ["critic"]}
+    actor = RslRlMLPModelCfg(
+        hidden_dims=[512, 256, 128],
+        obs_normalization=False,
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0),
+        activation="elu",
+    )
+    critic = RslRlMLPModelCfg(
+        hidden_dims=[512, 256, 128],
+        obs_normalization=False,
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
