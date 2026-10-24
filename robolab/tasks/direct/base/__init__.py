@@ -52,3 +52,23 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rpo_agent_cfg:RPORoughAgentCfg",
     },
 )
+
+gym.register(
+    id="RP1-Flat",
+    entry_point=f"{__name__}.base_env:BaseEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.rp1_env_cfg:RP1FlatEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rp1_agent_cfg:RP1FlatAgentCfg",
+    },
+)
+
+gym.register(
+    id="RP1-Rough",
+    entry_point=f"{__name__}.base_env:BaseEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.rp1_env_cfg:RP1RoughEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rp1_agent_cfg:RP1RoughAgentCfg",
+    },
+)

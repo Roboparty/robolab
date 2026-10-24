@@ -1,3 +1,6 @@
 [submodule "robolab/assets/roboparty/rpo"]
 	path = data/robots/roboparty/rpo
 	url = https://github.com/Roboparty/rpo_description.git
+[submodule "robolab/assets/roboparty/rp1"]
+	path = data/robots/roboparty/rp1
+	url = https://github.com/Roboparty/rp1_description.git

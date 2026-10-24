@@ -56,3 +56,13 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rpo_getup_mimic_agent_cfg:RPOGetupMimicPPORunnerCfg",
     },
 )
+
+gym.register(
+    id="RP1-BeyondMimic",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.rp1_beyondmimic_env_cfg:RP1BeyondMimicEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rp1_beyondmimic_agent_cfg:RP1BeyondMimicPPORunnerCfg",
+    },
+)
