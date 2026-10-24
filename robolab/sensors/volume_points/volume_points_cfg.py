@@ -7,7 +7,6 @@ from isaaclab.sensors import SensorBaseCfg
 from isaaclab.utils import configclass
 
 from .points_generator_cfg import PointsGeneratorCfg
-from .volume_points import VolumePoints
 
 VOLUME_POINTS_VISUALIZER_CFG = VisualizationMarkersCfg(
     prim_path="/Visuals/volumePoints",
@@ -28,7 +27,7 @@ VOLUME_POINTS_VISUALIZER_CFG = VisualizationMarkersCfg(
 class VolumePointsCfg(SensorBaseCfg):
     """Configuration for the volume points sensor."""
 
-    class_type: type = VolumePoints
+    class_type: type | str = "{DIR}.volume_points:VolumePoints"
 
     filter_prim_paths_expr: list[str] = list()
     """The list of primitive paths (or expressions) to filter volume points' body with. Defaults to an empty list,

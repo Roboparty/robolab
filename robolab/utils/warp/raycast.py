@@ -3,8 +3,6 @@ import torch
 
 import warp as wp
 
-from isaaclab.utils.math import convert_quat
-
 # disable warp module initialization messages
 wp.config.quiet = True
 # initialize the warp module
@@ -14,7 +12,7 @@ from . import kernels
 
 
 def raycast_mesh_grouped(
-    mesh_wp_device: wp.context.Device,
+    mesh_wp_device: wp.Device,
     mesh_wp_ids: torch.Tensor,
     mesh_transforms: torch.Tensor,
     mesh_inv_transforms: torch.Tensor,
@@ -52,18 +50,12 @@ def raycast_mesh_grouped(
     meah_idxs_slice_for_group = meah_idxs_slice_for_group.to(torch_device).view(-1).contiguous()
     num_rays = ray_starts.shape[0]
     # create output tensor for the ray hits
-    ray_hits = torch.full((num_rays, 3), max_dist, device=torch_device).contiguous()
+    ray_hits = torch.full((num_rays, 3), max_dist, dtype=torch.float32, device=torch_device).contiguous()
     # map the memory to warp arrays
     mesh_wp_ids_wp = wp.from_torch(mesh_wp_ids, dtype=wp.uint64)
-    mesh_transforms_ = torch.concatenate(
-        [mesh_transforms[:, :3], convert_quat(mesh_transforms[:, 3:], to="xyzw")],
-        dim=-1,
-    ).contiguous()
+    mesh_transforms_ = mesh_transforms.contiguous()
     mesh_transforms_wp = wp.from_torch(mesh_transforms_, dtype=wp.transform)
-    mesh_inv_transforms_ = torch.concatenate(
-        [mesh_inv_transforms[:, :3], convert_quat(mesh_inv_transforms[:, 3:], to="xyzw")],
-        dim=-1,
-    ).contiguous()
+    mesh_inv_transforms_ = mesh_inv_transforms.contiguous()
     mesh_inv_transforms_wp = wp.from_torch(mesh_inv_transforms_, dtype=wp.transform)
     ray_group_ids_wp = wp.from_torch(ray_group_ids, dtype=wp.int32)
     mesh_idxs_for_group_wp = wp.from_torch(mesh_idxs_for_group, dtype=wp.int32)
@@ -73,14 +65,14 @@ def raycast_mesh_grouped(
     ray_hits_wp = wp.from_torch(ray_hits, dtype=wp.vec3)
 
     if return_distance:
-        ray_distance = torch.full((num_rays,), float("inf"), device=torch_device).contiguous()
+        ray_distance = torch.full((num_rays,), float("inf"), dtype=torch.float32, device=torch_device).contiguous()
         ray_distance_wp = wp.from_torch(ray_distance, dtype=wp.float32)
     else:
         ray_distance = None
         ray_distance_wp = wp.empty((1,), dtype=wp.float32, device=torch_device)
 
     if return_normal:
-        ray_normal = torch.full((num_rays, 3), float("inf"), device=torch_device).contiguous()
+        ray_normal = torch.full((num_rays, 3), float("inf"), dtype=torch.float32, device=torch_device).contiguous()
         ray_normal_wp = wp.from_torch(ray_normal, dtype=wp.vec3)
     else:
         ray_normal = None

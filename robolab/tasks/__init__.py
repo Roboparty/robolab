@@ -32,7 +32,17 @@
 """Package containing task implementations for various robotic environments."""
 
 import os
-import toml
+from importlib.metadata import PackageNotFoundError, distribution
+
+# The kitless URDF importer must expose its schemas before USD caches the registry.
+try:
+    _schemas = distribution("isaacsim-asset-isolated").locate_file("isaacsim/asset/importer/utils/impl/schemas")
+except PackageNotFoundError:
+    pass
+else:
+    _paths = [path for path in os.environ.get("PXR_PLUGINPATH_NAME", "").split(os.pathsep) if path]
+    if (_schemas / "plugInfo.json").is_file() and str(_schemas) not in _paths:
+        os.environ["PXR_PLUGINPATH_NAME"] = os.pathsep.join([str(_schemas), *_paths])
 
 from isaaclab_tasks.utils import import_packages
 
@@ -42,6 +52,6 @@ from isaaclab_tasks.utils import import_packages
 
 
 # The blacklist is used to prevent importing configs from sub-packages
-_BLACKLIST_PKGS = ["utils"]
+_BLACKLIST_PKGS = ["utils", ".mdp", ".managers"]
 # Import all configs in this package
 import_packages(__name__, _BLACKLIST_PKGS)

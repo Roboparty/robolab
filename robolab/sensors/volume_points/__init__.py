@@ -1,3 +1,3 @@
-from .points_generator_cfg import Grid3dPointsGeneratorCfg
-from .volume_points import VolumePoints
-from .volume_points_cfg import VOLUME_POINTS_VISUALIZER_CFG, VolumePointsCfg
+from isaaclab.utils.module import lazy_export
+
+lazy_export()

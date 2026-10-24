@@ -10,7 +10,6 @@ from isaaclab.sensors.ray_caster.patterns import PinholeCameraPatternCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from .grouped_ray_caster_camera import GroupedRayCasterCamera
 from .grouped_ray_caster_cfg import GroupedRayCasterCfg
 
 
@@ -18,7 +17,7 @@ from .grouped_ray_caster_cfg import GroupedRayCasterCfg
 class GroupedRayCasterCameraCfg(GroupedRayCasterCfg):
     """Configuration for the grouped-ray-cast camera sensor."""
 
-    class_type: type = GroupedRayCasterCamera
+    class_type: type | str = "{DIR}.grouped_ray_caster_camera:GroupedRayCasterCamera"
 
     @configclass
     class OffsetCfg:
@@ -27,8 +26,8 @@ class GroupedRayCasterCameraCfg(GroupedRayCasterCfg):
         pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
         """Translation w.r.t. the parent frame. Defaults to (0.0, 0.0, 0.0)."""
 
-        rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
-        """Quaternion rotation (w, x, y, z) w.r.t. the parent frame. Defaults to (1.0, 0.0, 0.0, 0.0)."""
+        rot: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
+        """Quaternion rotation (x, y, z, w) w.r.t. the parent frame. Defaults to identity."""
 
         convention: Literal["opengl", "ros", "world"] = "ros"
         """The convention in which the frame offset is applied. Defaults to "ros".
@@ -73,4 +72,4 @@ class GroupedRayCasterCameraCfg(GroupedRayCasterCfg):
 
     def __post_init__(self):
         # for cameras, this quantity should be False always.
-        self.attach_yaw_only = False
+        self.ray_alignment = "base"

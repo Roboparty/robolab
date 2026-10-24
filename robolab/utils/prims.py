@@ -1,6 +1,6 @@
 """ Code snippet from accessing prims in isaac sim (scene) """
 
-import omni.physics.tensors.impl.api as physx
+import omni.physics.tensors.api as physx
 from pxr import UsdPhysics
 
 import isaaclab.sim as sim_utils
@@ -18,7 +18,7 @@ def get_articulation_view(
     # create view based on the type of prim
     if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
         articulation_view: physx.ArticulationView = physics_sim_view.create_articulation_view(
-            prim_path.replace(".*", "*")
+            sim_utils.path_expr_to_glob(prim_path)
         )
         found_supported_prim_class = True
     if not found_supported_prim_class:

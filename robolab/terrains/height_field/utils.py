@@ -11,8 +11,36 @@ import trimesh
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from isaaclab.terrains.height_field.utils import height_field_to_mesh as lab_height_field_to_mesh
+
 if TYPE_CHECKING:
     from isaaclab.terrains.height_field import HfTerrainBaseCfg
+
+
+def height_field_to_mesh(func: Callable) -> Callable:
+    """Supply GA's explicit origin while preserving RoboLab's center spawn height."""
+
+    @functools.wraps(func)
+    def wrapper(difficulty: float, cfg: HfTerrainBaseCfg):
+        terrain_size = cfg.size
+
+        @functools.wraps(func)
+        def with_origin(difficulty, cfg):
+            heights = func(difficulty, cfg)
+            border = int(cfg.border_width / cfg.horizontal_scale) + 1
+            padded = np.pad(heights, border)
+            x1, x2 = [int((terrain_size[0] * 0.5 + offset) / cfg.horizontal_scale) for offset in (-1, 1)]
+            y1, y2 = [int((terrain_size[1] * 0.5 + offset) / cfg.horizontal_scale) for offset in (-1, 1)]
+            origin = np.array([
+                terrain_size[0] * 0.5 - border * cfg.horizontal_scale,
+                terrain_size[1] * 0.5 - border * cfg.horizontal_scale,
+                np.max(padded[x1:x2, y1:y2]) * cfg.vertical_scale,
+            ])
+            return heights, origin
+
+        return lab_height_field_to_mesh(with_origin)(difficulty, cfg)
+
+    return wrapper
 
 
 def generate_wall(func: Callable) -> Callable:

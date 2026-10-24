@@ -29,14 +29,9 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from . import agents
-from .base_config import BaseAgentCfg, BaseEnvCfg, RewardCfg, HeightScannerCfg, SceneContextCfg, RobotCfg, ObsScalesCfg, NormalizationCfg, CommandRangesCfg, CommandsCfg, NoiseScalesCfg, NoiseCfg, EventCfg
-from .base_env import BaseEnv
-from .scene_cfg import SceneCfg
-from .terrain_generator_cfg import GRAVEL_TERRAINS_CFG, ROUGH_TERRAINS_CFG, ROUGH_HARD_TERRAINS_CFG
-from . import mdp
-
 import gymnasium as gym
+
+from . import agents
 
 gym.register(
     id="RPO-Flat",

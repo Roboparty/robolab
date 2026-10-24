@@ -30,11 +30,30 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
+
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import DelayedPDActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
+from isaaclab_newton.sim.schemas import NewtonArticulationCfg
+from isaaclab_physx.sim.schemas import PhysxArticulationCfg
 
 from robolab.assets import ISAAC_DATA_DIR
+
+# Keep legacy policy and motion-file coordinates identical across solvers.
+RPO_JOINT_ORDER = (
+    "left_thigh_yaw_joint", "right_thigh_yaw_joint", "torso_joint",
+    "left_thigh_roll_joint", "right_thigh_roll_joint",
+    "left_arm_pitch_joint", "right_arm_pitch_joint",
+    "left_thigh_pitch_joint", "right_thigh_pitch_joint",
+    "left_arm_roll_joint", "right_arm_roll_joint",
+    "left_knee_joint", "right_knee_joint",
+    "left_arm_yaw_joint", "right_arm_yaw_joint",
+    "left_ankle_pitch_joint", "right_ankle_pitch_joint",
+    "left_elbow_pitch_joint", "right_elbow_pitch_joint",
+    "left_ankle_roll_joint", "right_ankle_roll_joint",
+    "left_elbow_yaw_joint", "right_elbow_yaw_joint",
+)
+RPO_BODY_ORDER = ("base_link", *(name.removesuffix("_joint") + "_link" for name in RPO_JOINT_ORDER))
 
 RPO_CFG = ArticulationCfg(
     spawn=sim_utils.UrdfFileCfg(
@@ -45,11 +64,14 @@ RPO_CFG = ArticulationCfg(
         joint_drive = sim_utils.UrdfConverterCfg.JointDriveCfg(
             gains=sim_utils.UrdfConverterCfg.JointDriveCfg.PDGainsCfg(stiffness=0, damping=0)
         ),
-        articulation_props = sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=True,
-            solver_position_iteration_count=8,
-            solver_velocity_iteration_count=4,
-        ),
+        articulation_props=[
+            PhysxArticulationCfg(
+                enabled_self_collisions=True,
+                solver_position_iteration_count=8,
+                solver_velocity_iteration_count=4,
+            ),
+            NewtonArticulationCfg(self_collision_enabled=True),
+        ],
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             retain_accelerations=False,
@@ -79,6 +101,8 @@ RPO_CFG = ArticulationCfg(
         joint_vel={".*": 0.0},
     ),
     soft_joint_pos_limit_factor=0.90,
+    joint_ordering=RPO_JOINT_ORDER,
+    body_ordering=RPO_BODY_ORDER,
     actuators={
         "legs": DelayedPDActuatorCfg(
             joint_names_expr=[
@@ -88,8 +112,8 @@ RPO_CFG = ArticulationCfg(
                 ".*_knee_joint",
                 ".*torso.*",
             ],
-            effort_limit_sim=120.0,
-            velocity_limit_sim=25.0,
+            joint_effort_limit=120.0,
+            joint_velocity_limit=25.0,
             stiffness={
                 ".*_thigh_yaw_joint": 100.0,
                 ".*_thigh_roll_joint": 100.0,
@@ -110,8 +134,8 @@ RPO_CFG = ArticulationCfg(
         ),
         "feet": DelayedPDActuatorCfg(
             joint_names_expr=[".*_ankle_pitch_joint", ".*_ankle_roll_joint"],
-            effort_limit_sim=27.0,
-            velocity_limit_sim=8.0,
+            joint_effort_limit=27.0,
+            joint_velocity_limit=8.0,
             stiffness=40.0,
             damping=2.0,
             armature=0.01,
@@ -124,8 +148,8 @@ RPO_CFG = ArticulationCfg(
                 ".*_arm_roll_joint",
                 ".*_arm_yaw_joint",
             ],
-            effort_limit_sim=27.0,
-            velocity_limit_sim=8.0,
+            joint_effort_limit=27.0,
+            joint_velocity_limit=8.0,
             stiffness=40.0,
             damping=2.0,
             armature=0.01,
@@ -145,8 +169,8 @@ RPO_CFG = ArticulationCfg(
                 ".*_elbow_pitch_joint": 1.5,
                 ".*_elbow_yaw_joint": 1.0,
             },
-            effort_limit_sim=27.0,
-            velocity_limit_sim=8.0,
+            joint_effort_limit=27.0,
+            joint_velocity_limit=8.0,
             armature=0.01,
             min_delay=0,
             max_delay=2,

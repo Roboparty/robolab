@@ -29,23 +29,20 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from distutils.core import setup
-
-from setuptools import find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="robolab",
     packages=find_packages(),
+    package_data={"": ["*.pyi"]},
+    entry_points={"isaaclab.tasks": ["robolab = robolab.tasks"]},
     version="1.0.0",
+    python_requires=">=3.12,<3.13",
     install_requires=[
-        "mujoco==3.3.3",
-        "mujoco-python-viewer",
         "psutil",
         "joblib>=1.2.0",
-        "pynput",
         "opencv-python",
-        "onnxruntime-gpu",
-        "pyvista",
         "scikit-learn",
     ],
+    extras_require={"tools": ["pyvista"]},
 )

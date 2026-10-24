@@ -90,8 +90,8 @@ class TerrainImporter(TerrainImporterBase):
         mesh.remove_unreferenced_vertices()
         # Generate virtual obstacles based on the imported mesh.
         # NOTE: generate virtual obstacle first because it might modify the mesh.
-        for name, virtual_obstacle in self._virtual_obstacles.items():
-            with Timer(f"Generate virtual obstacle {name}"):
+        for obstacle_name, virtual_obstacle in self._virtual_obstacles.items():
+            with Timer(f"Generate virtual obstacle {obstacle_name}"):
                 virtual_obstacle.generate(mesh, device=self.device)
 
         super().import_mesh(name, mesh)

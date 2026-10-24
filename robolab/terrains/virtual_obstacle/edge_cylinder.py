@@ -10,9 +10,6 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 from numpy.linalg import norm
 from typing import TYPE_CHECKING
 
-import cv2
-from pxr import UsdGeom, UsdPhysics
-from sklearn.cluster import DBSCAN
 
 import isaaclab.utils.math as math_utils
 from isaaclab.markers import VisualizationMarkers
@@ -32,7 +29,6 @@ if TYPE_CHECKING:
         RayEdgeCylinderCfg,
         FeatureEdgeCylinderCfg,
     )
-import pyvista as pv
 
 
 class EdgeCylinder(VirtualObstacleBase):
@@ -267,6 +263,8 @@ class RansacEdgeCylinder(EdgeCylinder):
         unique_endpoints = np.unique(endpoints, axis=0)
         max_iters = self.cfg.max_iter
         thresh = self.cfg.point_distance_threshold
+
+        from sklearn.cluster import DBSCAN
 
         db = DBSCAN(eps=self.cfg.cluster_eps, min_samples=2, metric="euclidean")
         labels = db.fit_predict(unique_endpoints)
@@ -547,6 +545,8 @@ class RayEdgeCylinder(VirtualObstacleBase):
         points_list = points_list[points_list[:, 2] >= self.cfg.cutoff_z_height]
         self.points_list = torch.tensor(points_list, device=self.device)
 
+        from sklearn.cluster import DBSCAN
+
         db = DBSCAN(eps=self.cfg.cluster_eps, min_samples=2, metric="euclidean", n_jobs=8)
         labels = db.fit_predict(points_list)
 
@@ -672,6 +672,8 @@ class FeatureEdgeCylinder(VirtualObstacleBase):
         # extract vertices and faces from the trimesh object
         points = mesh.vertices.astype(np.float32)
         indices = mesh.faces.astype(np.int32)
+        import pyvista as pv
+
         pv_mesh = pv.PolyData(points, np.hstack((np.full((indices.shape[0], 1), 3), indices)))
         edges = pv_mesh.extract_feature_edges(
             feature_angle=self.cfg.feature_angle,
@@ -772,6 +774,8 @@ class FeatureEdgeCylinder(VirtualObstacleBase):
 
 
 def process_camera_edges(i, depth_image, normal_image, cfg):
+    import cv2
+
     # Depth edges for camera i
     depth_i = depth_image[i, ..., 0].cpu().numpy()
     depth_norm = cv2.normalize(depth_i, None, 0, 255, cv2.NORM_MINMAX)

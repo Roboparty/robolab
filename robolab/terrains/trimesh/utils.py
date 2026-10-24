@@ -4,6 +4,10 @@ import functools
 import numpy as np
 import trimesh
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from isaaclab.terrains import SubTerrainBaseCfg
 
 
 def crop_terrain_mesh_aabb(
@@ -78,7 +82,7 @@ def generate_wall(func: Callable) -> Callable:
     """Wrapper to add walls to the generated terrain mesh."""
 
     @functools.wraps(func)
-    def wrapper(difficulty: float, cfg: HfTerrainBaseCfg):
+    def wrapper(difficulty: float, cfg: SubTerrainBaseCfg):
         meshes, origin = func(difficulty, cfg)
         if cfg is None or not hasattr(cfg, "wall_prob"):
             return meshes, origin
