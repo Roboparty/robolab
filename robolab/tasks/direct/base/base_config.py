@@ -37,16 +37,10 @@ from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 from isaaclab.utils import configclass
-from isaaclab_rl.rsl_rl import (  # noqa:F401
-    RslRlOnPolicyRunnerCfg,
-    RslRlPpoActorCriticCfg,
-    RslRlPpoAlgorithmCfg,
-    RslRlRndCfg,
-    RslRlSymmetryCfg,
-)
-from isaaclab.sim import SimulationCfg, PhysxCfg
+from isaaclab.sim import SimulationCfg
 import isaaclab.sim as sim_utils
 from isaaclab.envs import DirectRLEnvCfg, ViewerCfg
+from robolab.utils.physics import RoughPhysicsPresetCfg
 from .scene_cfg import SceneCfg
 
 from . import mdp
@@ -90,6 +84,11 @@ class RobotCfg:
     terminate_base_height: float = None
     terminate_base_orientation: float = None
     feet_body_names: list = MISSING
+    preserve_feet_order: bool = False
+    observation_history_layout: str = "frame_major"
+    contact_force_type: str = "normal"
+    replace_invalid_height_hits: bool = False
+    ground_contact_sensor_names: tuple[str, ...] = ()
 
 
 @configclass
@@ -110,6 +109,7 @@ class NormalizationCfg:
     clip_observations: float = 100.0
     clip_actions: float = 100.0
     height_scan_offset: float = 0.5
+    height_scan_invalid_value: float | None = None
 
 
 @configclass
@@ -143,6 +143,7 @@ class NoiseScalesCfg:
 @configclass
 class NoiseCfg:
     add_noise: bool = True
+    add_height_scan_noise: bool = True
     noise_scales: NoiseScalesCfg = NoiseScalesCfg()
 
 
@@ -167,6 +168,7 @@ class EventCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "mass_distribution_params": (-1.0, 1.0),
             "operation": "add",
+            "recompute_inertia": True,
         },
     )
     randomize_rigid_body_com = EventTerm(
@@ -186,6 +188,7 @@ class EventCfg:
             ),
             "mass_distribution_params": (0.9, 1.1),
             "operation": "scale",
+            "recompute_inertia": True,
         },
     )
     scale_actuator_gains = EventTerm(
@@ -255,7 +258,8 @@ class BaseEnvCfg(DirectRLEnvCfg):
     sim: SimulationCfg = SimulationCfg(
         dt=0.005, 
         render_interval=decimation, 
-        physx=PhysxCfg(gpu_max_rigid_patch_count=10 * 2**15),
+        physics=RoughPhysicsPresetCfg(),
+        use_newton_actuators=False,
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
             restitution_combine_mode="multiply",
@@ -275,55 +279,6 @@ class BaseEnvCfg(DirectRLEnvCfg):
         noise_scales=NoiseScalesCfg(),
     )
     events: EventCfg = EventCfg()
-
-    def __post_init__(self):
-        pass
-
-
-@configclass
-class BaseAgentCfg(RslRlOnPolicyRunnerCfg):
-    seed = 42
-    device = "cuda:0"
-    num_steps_per_env = 24
-    max_iterations = 12001
-    runner_class_name = "OnPolicyRunner"
-    empirical_normalization = False
-    policy = RslRlPpoActorCriticCfg(
-        class_name="ActorCritic",
-        init_noise_std=1.0,
-        noise_std_type="scalar",
-        actor_hidden_dims=[512, 256, 128],
-        critic_hidden_dims=[512, 256, 128],
-        activation="elu",
-    )
-    algorithm = RslRlPpoAlgorithmCfg(
-        class_name="PPO",
-        value_loss_coef=1.0,
-        use_clipped_value_loss=True,
-        clip_param=0.2,
-        entropy_coef=0.005,
-        num_learning_epochs=5,
-        num_mini_batches=4,
-        learning_rate=1.0e-4,
-        schedule="adaptive",
-        gamma=0.994,
-        lam=0.9,
-        desired_kl=0.01,
-        max_grad_norm=1.0,
-        normalize_advantage_per_mini_batch=False,
-        symmetry_cfg=None,  # RslRlSymmetryCfg()
-        rnd_cfg=None,  # RslRlRndCfg()
-    )
-    clip_actions = None
-    save_interval = 500
-    experiment_name = ""
-    run_name = ""
-    logger = "wandb"
-    neptune_project = "robolab"
-    wandb_project = "robolab"
-    resume = False
-    load_run = ".*"
-    load_checkpoint = "model_.*.pt"
 
     def __post_init__(self):
         pass

@@ -35,25 +35,9 @@ from isaaclab.utils import configclass
 
 from robolab.tasks.direct.base import mdp
 from robolab.assets.robots import RPO_CFG
-from robolab.tasks.direct.base import (  # noqa:F401
-    BaseAgentCfg, 
-    BaseEnvCfg, 
-    RewardCfg, 
-    HeightScannerCfg, 
-    SceneContextCfg, 
-    RobotCfg, 
-    ObsScalesCfg, 
-    NormalizationCfg, 
-    CommandRangesCfg, 
-    CommandsCfg, 
-    NoiseScalesCfg, 
-    NoiseCfg, 
-    EventCfg,
-    GRAVEL_TERRAINS_CFG,
-    ROUGH_TERRAINS_CFG,
-    ROUGH_HARD_TERRAINS_CFG,
-    SceneCfg
-)
+from robolab.tasks.direct.base.base_config import BaseEnvCfg, RewardCfg
+from robolab.tasks.direct.base.scene_cfg import SceneCfg
+from robolab.tasks.direct.base.terrain_generator_cfg import GRAVEL_TERRAINS_CFG, ROUGH_TERRAINS_CFG
 
 
 @configclass
@@ -214,6 +198,5 @@ class RPORoughEnvCfg(RPOFlatEnvCfg):
             physics_dt = self.sim.dt,
             step_dt = self.decimation * self.sim.dt
         )
-        self.sim.physx.gpu_collision_stack_size = 2**29
         self.reward.ang_vel_xy_l2.weight = -0.05
         self.reward.lin_vel_z_l2.weight = -0.05

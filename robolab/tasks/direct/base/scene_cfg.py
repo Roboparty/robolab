@@ -30,27 +30,27 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from typing import TYPE_CHECKING
-from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+from isaaclab.assets import AssetBaseCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg, patterns
 from isaaclab.terrains.terrain_importer_cfg import TerrainImporterCfg
 from isaaclab.utils import configclass
+from isaaclab_tasks.utils import preset
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 
 from isaaclab.sensors.ray_caster import RayCasterCfg 
 
 if TYPE_CHECKING:
-    from .base_config import BaseSceneCfg
+    from .base_config import SceneContextCfg
 
 
 @configclass
 class SceneCfg(InteractiveSceneCfg):
-    """Configuration for a cart-pole scene."""
+    """Configuration shared by the Direct locomotion tasks."""
 
-    def __init__(self, config: "BaseSceneCfg", physics_dt, step_dt):
+    def __init__(self, config: "SceneContextCfg", physics_dt, step_dt):
         super().__init__(num_envs=config.num_envs, env_spacing=config.env_spacing)
 
         self.terrain = TerrainImporterCfg(
@@ -94,27 +94,32 @@ class SceneCfg(InteractiveSceneCfg):
         )
 
         self.left_feet_scanner = RayCasterCfg(
-            prim_path="{ENV_REGEX_NS}/Robot/left_ankle_roll_link",
+            prim_path="{ENV_REGEX_NS}/Robot/(?!.*left_ankle_roll_link/).*left_ankle_roll_link",
             offset=RayCasterCfg.OffsetCfg(pos=(0.025, 0.0, 20.0)),
             ray_alignment='yaw',
             pattern_cfg=patterns.GridPatternCfg(resolution=0.01, size=[0.12, 0.04]),
             debug_vis=True,
             mesh_prim_paths=["/World/ground"],
+            global_world_only=True,
             update_period=step_dt,
         )
         self.right_feet_scanner = RayCasterCfg(
-            prim_path="{ENV_REGEX_NS}/Robot/right_ankle_roll_link",
+            prim_path="{ENV_REGEX_NS}/Robot/(?!.*right_ankle_roll_link/).*right_ankle_roll_link",
             offset=RayCasterCfg.OffsetCfg(pos=(0.025, 0.0, 20.0)),
             ray_alignment='yaw',
             pattern_cfg=patterns.GridPatternCfg(resolution=0.01, size=[0.12, 0.04]),
             debug_vis=True,
             mesh_prim_paths=["/World/ground"],
+            global_world_only=True,
             update_period=step_dt,
         )
 
         if config.height_scanner.enable_height_scan:
             self.height_scanner = RayCasterCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/" + config.height_scanner.prim_body_name,
+                prim_path=(
+                    "{ENV_REGEX_NS}/Robot/(?!.*" + config.height_scanner.prim_body_name
+                    + "/).*" + config.height_scanner.prim_body_name
+                ),
                 offset=RayCasterCfg.OffsetCfg(pos=config.height_scanner.offset),
                 ray_alignment='yaw',
                 pattern_cfg=patterns.GridPatternCfg(
@@ -122,6 +127,33 @@ class SceneCfg(InteractiveSceneCfg):
                 ),
                 debug_vis=config.height_scanner.debug_vis,
                 mesh_prim_paths=["/World/ground"],
+                global_world_only=True,
                 update_period=step_dt,
                 drift_range=config.height_scanner.drift_range,
             )
+
+
+def configure_self_contact_sensors(scene, sensor_name, physics_dt, body_names):
+    """Use native Newton filtering and per-body PhysX ground filters."""
+    sensor = getattr(scene, sensor_name)
+    # GA preserves terrain prim paths; the alternative covers older Newton mesh labels.
+    terrain_shapes = ["/World/ground/.*|shape_[0-9]+"] if scene.terrain.terrain_type == "generator" else ["/World/ground/.*"]
+    sensor.filter_shape_prim_expr = preset(
+        default=terrain_shapes, isaacsim_physx=[], newton_mjwarp=terrain_shapes
+    )
+    ground_path = (
+        "/World/ground/terrain/mesh" if scene.terrain.terrain_type == "generator"
+        else "/World/ground/terrain/GroundPlane/CollisionPlane"
+    )
+    # PhysX supports only one sensor body per filtered contact sensor.
+    for body in body_names:
+        setattr(scene, "self_contact_" + body, preset(
+            default=None,
+            isaacsim_physx=ContactSensorCfg(
+                prim_path="{ENV_REGEX_NS}/Robot/.*" + body,
+                filter_prim_paths_expr=[ground_path],
+                history_length=3,
+                update_period=physics_dt,
+            ),
+            newton_mjwarp=None,
+        ))

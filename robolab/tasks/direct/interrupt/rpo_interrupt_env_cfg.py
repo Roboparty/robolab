@@ -37,25 +37,10 @@ from isaaclab.utils import configclass
 
 from robolab.tasks.direct.base import mdp
 from robolab.assets.robots import RPO_CFG
-from robolab.tasks.direct.base import (  # noqa:F401
-    BaseAgentCfg, 
-    BaseEnvCfg, 
-    RewardCfg, 
-    HeightScannerCfg, 
-    SceneContextCfg, 
-    RobotCfg, 
-    ObsScalesCfg, 
-    NormalizationCfg, 
-    CommandRangesCfg, 
-    CommandsCfg, 
-    NoiseScalesCfg, 
-    NoiseCfg, 
-    EventCfg,
-    GRAVEL_TERRAINS_CFG,
-    ROUGH_TERRAINS_CFG,
-    ROUGH_HARD_TERRAINS_CFG,
-    SceneCfg
-)
+from .interrupt_env_cfg import InterruptCfg
+from robolab.tasks.direct.base.base_config import BaseEnvCfg, RewardCfg
+from robolab.tasks.direct.base.scene_cfg import SceneCfg
+from robolab.tasks.direct.base.terrain_generator_cfg import GRAVEL_TERRAINS_CFG
 
 
 @configclass
@@ -177,31 +162,6 @@ class RPORewardCfg(RewardCfg):
                 "ankle_height":0.04,"threshold":0.02})
     action_penalty = RewTerm(func=mdp.action_penalty_interrupt, weight=-0.1, params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_arm.*", ".*_elbow_pitch.*"])})
 
-
-@configclass
-class InterruptCfg:
-    use_interrupt: bool = False
-    max_curriculum: float = 1.0
-    interrupt_ratio: float = 0.5
-    interrupt_joint_names: list = []
-    interrupt_scale : list = []
-    interrupt_lower_bound: list = []
-    interrupt_init_range: float = 0.2
-    interrupt_update_step: int = 30
-    switch_prob: float = 0.005
-    interrupt_vis: VisualizationMarkersCfg = VisualizationMarkersCfg(
-        markers={
-            "interrupt": sim_utils.SphereCfg(
-                radius=0.1,
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0)),
-            ),
-            "no_interrupt": sim_utils.SphereCfg(
-                radius=0.1,
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),
-            ),
-        },
-        prim_path="/Visuals/Command/interrupt",
-    )
 
 @configclass
 class RPOInterruptEnvCfg(BaseEnvCfg):
