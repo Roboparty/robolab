@@ -1,4 +1,5 @@
-from isaaclab_tasks.manager_based.locomotion.velocity.mdp import *
+from isaaclab.envs.mdp import *
+from isaaclab_tasks.core.velocity.mdp import *
 from .observations import *
 from .rewards import *
 from .terminations import *

@@ -4,19 +4,15 @@ import torch
 from typing import TYPE_CHECKING, Literal
 
 import isaaclab.utils.math as math_utils
-from isaaclab.assets import Articulation, RigidObject
-from isaaclab.envs import ManagerBasedEnv, ManagerBasedRLEnv
+from isaaclab.assets import Articulation
 from isaaclab.envs.mdp.events import _randomize_prop_by_op
-from isaaclab.managers import EventTermCfg, ManagerTermBase, SceneEntityCfg
-from isaaclab.sensors import RayCaster
-from isaaclab.sensors.ray_caster.ray_cast_utils import obtain_world_pose_from_view
-
-from robolab.sensors.grouped_ray_caster import GroupedRayCaster
+from isaaclab.managers import SceneEntityCfg
 
 if TYPE_CHECKING:
-    from isaaclab.sensors import Camera, RayCasterCamera
+    from isaaclab.envs import ManagerBasedEnv
+    from isaaclab.sensors import Camera, RayCaster, RayCasterCamera
 
-    from robolab.sensors.grouped_ray_caster import GroupedRayCasterCamera
+    from robolab.sensors.grouped_ray_caster import GroupedRayCaster, GroupedRayCasterCamera
 
 
 def randomize_default_joint_pos(
@@ -34,7 +30,7 @@ def randomize_default_joint_pos(
     asset: Articulation = env.scene[asset_cfg.name]
 
     # save nominal value for export
-    asset.data.default_joint_pos_nominal = torch.clone(asset.data.default_joint_pos[0])
+    asset.data.default_joint_pos_nominal = torch.clone(asset.data.default_joint_pos.torch[0])
 
     # resolve environment ids
     if env_ids is None:
@@ -47,14 +43,14 @@ def randomize_default_joint_pos(
         joint_ids = torch.tensor(asset_cfg.joint_ids, dtype=torch.int, device=asset.device)
 
     if offset_distribution_params is not None:
-        pos = asset.data.default_joint_pos.to(asset.device).clone()
+        pos = asset.data.default_joint_pos.torch.to(asset.device).clone()
         pos = _randomize_prop_by_op(
             pos, offset_distribution_params, env_ids, joint_ids, operation=operation, distribution=distribution
         )[env_ids][:, joint_ids]
 
         if env_ids != slice(None) and joint_ids != slice(None):
             env_ids = env_ids[:, None]  # type: ignore
-        asset.data.default_joint_pos[env_ids, joint_ids] = pos
+        asset.data.default_joint_pos.torch[env_ids, joint_ids] = pos
         # update the offset in action since it is not updated automatically
         env.action_manager.get_term("joint_pos")._offset[env_ids, joint_ids] = pos
 
@@ -75,11 +71,13 @@ def randomize_ray_offsets(
             and values are tuples representing the range for each component.
         - distribution: (str) "uniform" or "log_uniform" or "gaussian", determines the distribution of the randomization.
     """
-    num_env_ids = env.scene.num_envs if env_ids is None else len(env_ids)
     # extract the used quantities (to enable type-hinting)
     sensor: RayCaster | GroupedRayCaster = env.scene[asset_cfg.name]
-    ray_starts = sensor.ray_starts[env_ids]  # (num_envs, num_rays, 3)
-    ray_directions = sensor.ray_directions[env_ids]  # (num_envs, num_rays, 3)
+    if env_ids is None:
+        env_ids = torch.arange(env.scene.num_envs, device=sensor.device)
+    ray_starts = sensor.ray_starts.torch[env_ids]  # (num_envs, num_rays, 3)
+    num_env_ids = ray_starts.shape[0]
+    ray_directions = sensor.ray_directions.torch[env_ids]  # (num_envs, num_rays, 3)
     # sample from given range
     range_list = [offset_pose_ranges.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
     ranges = torch.tensor(range_list, device=ray_starts.device)  # (6, 2)
@@ -98,13 +96,13 @@ def randomize_ray_offsets(
         rand_samples[..., 3],
         rand_samples[..., 4],
         rand_samples[..., 5],
-    )  # (num_envs * num_rays, 4) (w, x, y, z)
+    )  # (num_envs * num_rays, 4), xyzw
     # apply the randomization
     ray_starts += position_samples.reshape(ray_starts.shape)
     ray_directions = math_utils.quat_apply(rotation_samples.reshape(*ray_directions.shape[:-1], 4), ray_directions)
 
-    sensor.ray_starts[env_ids] = ray_starts
-    sensor.ray_directions[env_ids] = ray_directions
+    sensor.ray_starts.torch[env_ids] = ray_starts
+    sensor.ray_directions.torch[env_ids] = ray_directions
 
 
 def randomize_camera_offsets(
@@ -203,7 +201,8 @@ def randomize_camera_offsets(
         camera_euler_pitch,
         camera_euler_yaw,
     )
-    camera_pos_w, camera_quat_w = obtain_world_pose_from_view(sensor._view, env_ids)
+    camera_pos_w, camera_quat_w = sensor._view.get_world_poses(env_ids.to(dtype=torch.int32))
+    camera_pos_w, camera_quat_w = camera_pos_w.torch.clone(), camera_quat_w.torch.clone()
     camera_pos_w, camera_quat_w = math_utils.combine_frame_transforms(
         camera_pos_w, camera_quat_w, camera_offset_pos, camera_offset_quat
     )
@@ -215,5 +214,5 @@ def randomize_camera_offsets(
         camera_pos_w,
         camera_quat_w,
         env_ids=env_ids,
-        convention=sensor.cfg.offset.convention,
+        convention="world",
     )

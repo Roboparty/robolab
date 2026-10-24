@@ -6,9 +6,6 @@ from typing import TYPE_CHECKING, Literal
 import isaaclab.utils.math as math_utils
 from isaaclab.envs.mdp.events import _randomize_prop_by_op
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.sensors import RayCasterCamera
-
-from robolab.sensors import NoisyGroupedRayCasterCamera, NoisyRayCasterCamera
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
@@ -27,7 +24,7 @@ def push_by_setting_velocity_without_stand(
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
 
     # velocities
-    vel_w = asset.data.root_vel_w[env_ids]
+    vel_w = asset.data.root_vel_w.torch[env_ids]
     # sample random velocities
     range_list = [velocity_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
     ranges = torch.tensor(range_list, device=asset.device)
@@ -38,4 +35,4 @@ def push_by_setting_velocity_without_stand(
 
     vel_w += add_vel * should_push
     # set the velocities into the physics simulation
-    asset.write_root_velocity_to_sim(vel_w, env_ids=env_ids)
+    asset.write_root_velocity_to_sim_index(root_velocity=vel_w, env_ids=env_ids)

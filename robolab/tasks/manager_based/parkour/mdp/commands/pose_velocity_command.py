@@ -153,24 +153,26 @@ class PoseVelocityCommand(CommandTerm):
         max_command_step = max_command_time / self._env.step_dt
         # logs data
         self.metrics["error_vel_xy"] += (
-            torch.norm(self.vel_command_b[:, :2] - self.robot.data.root_lin_vel_b[:, :2], dim=-1) / max_command_step
+            torch.norm(self.vel_command_b[:, :2] - self.robot.data.root_lin_vel_b.torch[:, :2], dim=-1) / max_command_step
         )
         self.metrics["error_vel_yaw"] += (
-            torch.abs(self.vel_command_b[:, 2] - self.robot.data.root_ang_vel_b[:, 2]) / max_command_step
+            torch.abs(self.vel_command_b[:, 2] - self.robot.data.root_ang_vel_b.torch[:, 2]) / max_command_step
         )
         lin_vel_error = torch.sum(
-            torch.square(self.vel_command_b[:, :2] - self.robot.data.root_lin_vel_b[:, :2]),
+            torch.square(self.vel_command_b[:, :2] - self.robot.data.root_lin_vel_b.torch[:, :2]),
             dim=1,
         )
         self.metrics["tracking_exp_vel_xy"] += (
             torch.exp(-lin_vel_error / self.cfg.lin_vel_metrics_std**2) / self._env.max_episode_length
         )
-        angular_vel_error = torch.square(self.vel_command_b[:, 2] - self.robot.data.root_ang_vel_b[:, 2])
+        angular_vel_error = torch.square(self.vel_command_b[:, 2] - self.robot.data.root_ang_vel_b.torch[:, 2])
         self.metrics["tracking_exp_vel_yaw"] += (
             torch.exp(-angular_vel_error / self.cfg.ang_vel_metrics_std**2) / self._env.max_episode_length
         )
 
-    def _resample_command(self, env_ids: Sequence[int]):
+    def _resample_command(self, env_ids: Sequence[int] | slice):
+        if isinstance(env_ids, slice):
+            env_ids = torch.arange(self.num_envs, device=self.device)[env_ids]
         # sample new position targets from the terrain
         ids = torch.randint(0, self.valid_targets.shape[2], size=(len(env_ids),), device=self.device)
         self.pos_command_w[env_ids] = self.valid_targets[
@@ -180,7 +182,7 @@ class PoseVelocityCommand(CommandTerm):
             straight_mask = torch.rand(len(env_ids), device=self.device) < self.cfg.straight_target_prob
             self.pos_command_w[env_ids, 1] = torch.where(
                 straight_mask,
-                self.robot.data.root_pos_w[env_ids, 1],
+                self.robot.data.root_pos_w.torch[env_ids, 1],
                 self.pos_command_w[env_ids, 1],
             )
 
@@ -233,18 +235,18 @@ class PoseVelocityCommand(CommandTerm):
 
     def _update_command(self):
         """Re-target the position command to the current root state."""
-        target_vec = self.pos_command_w - self.robot.data.root_pos_w[:, :3]
+        target_vec = self.pos_command_w - self.robot.data.root_pos_w.torch[:, :3]
         target_dist = torch.norm(target_vec[:, :2], dim=1)
-        self.pos_command_b[:] = quat_apply_inverse(yaw_quat(self.robot.data.root_quat_w), target_vec)
+        self.pos_command_b[:] = quat_apply_inverse(yaw_quat(self.robot.data.root_quat_w.torch), target_vec)
         self.vel_command_b[:, :2] = self.pos_command_b[:, :2] * self.cfg.velocity_control_stiffness
 
         # set heading command to point towards target
-        target_vec = self.pos_command_w - self.robot.data.root_pos_w
+        target_vec = self.pos_command_w - self.robot.data.root_pos_w.torch
         target_direction = torch.atan2(target_vec[:, 1], target_vec[:, 0])
 
         # compute errors to find the closest direction to the current heading
         # this is done to avoid the discontinuity at the -pi/pi boundary
-        self.heading_command_w = wrap_to_pi(target_direction - self.robot.data.heading_w)
+        self.heading_command_w = wrap_to_pi(target_direction - self.robot.data.heading_w.torch)
 
         self.vel_command_b[:, 2] = self.heading_command_w * self.cfg.heading_control_stiffness
 
@@ -342,11 +344,11 @@ class PoseVelocityCommand(CommandTerm):
             self.flat_patch_visualizer.visualize(self.pos_command_w, marker_indices=marker_indices)
         # get marker location
         # -- base state
-        base_pos_w = self.robot.data.root_pos_w.clone()
+        base_pos_w = self.robot.data.root_pos_w.torch.clone()
         base_pos_w[:, 2] += 0.5
         # -- resolve the scales and quaternions
         vel_des_arrow_scale, vel_des_arrow_quat = self._resolve_xy_velocity_to_arrow(self.command[:, :2])
-        vel_arrow_scale, vel_arrow_quat = self._resolve_xy_velocity_to_arrow(self.robot.data.root_lin_vel_b[:, :2])
+        vel_arrow_scale, vel_arrow_quat = self._resolve_xy_velocity_to_arrow(self.robot.data.root_lin_vel_b.torch[:, :2])
         # display markers
         self.goal_vel_visualizer.visualize(base_pos_w, vel_des_arrow_quat, vel_des_arrow_scale)
         self.current_vel_visualizer.visualize(base_pos_w, vel_arrow_quat, vel_arrow_scale)
@@ -363,7 +365,7 @@ class PoseVelocityCommand(CommandTerm):
         zeros = torch.zeros_like(heading_angle)
         arrow_quat = math_utils.quat_from_euler_xyz(zeros, zeros, heading_angle)
         # convert everything back from base to world frame
-        base_quat_w = self.robot.data.root_quat_w
+        base_quat_w = self.robot.data.root_quat_w.torch
         arrow_quat = math_utils.quat_mul(base_quat_w, arrow_quat)
 
         return arrow_scale, arrow_quat

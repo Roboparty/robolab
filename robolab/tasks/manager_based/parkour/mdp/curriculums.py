@@ -104,7 +104,9 @@ def modify_rewards_weight(
     # update per-environment weights for the specified envs only
     per_env_weights = env.reward_manager.get_per_env_term_weights(term_name)
     # normalize env_ids to tensor for indexing
-    if not isinstance(env_ids, torch.Tensor):
+    if isinstance(env_ids, slice):
+        env_idx = torch.arange(env.num_envs, device=per_env_weights.device)[env_ids]
+    elif not isinstance(env_ids, torch.Tensor):
         env_idx = torch.tensor(list(env_ids), dtype=torch.long, device=per_env_weights.device)
     else:
         env_idx = env_ids.to(device=per_env_weights.device)

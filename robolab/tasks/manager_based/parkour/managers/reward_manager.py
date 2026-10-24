@@ -230,7 +230,9 @@ class MultiRewardManager(RewardManager):
         if term_name not in self.__group_term_names[group_name]:
             raise ValueError(f"Term '{term_name}' not found in group '{group_name}'.")
         # normalize env_ids to tensor
-        if not isinstance(env_ids, torch.Tensor):
+        if isinstance(env_ids, slice):
+            env_idx = torch.arange(self.num_envs, device=self.device)[env_ids]
+        elif not isinstance(env_ids, torch.Tensor):
             env_idx = torch.tensor(list(env_ids), dtype=torch.long, device=self.device)
         else:
             env_idx = env_ids.to(device=self.device)
@@ -249,7 +251,7 @@ class MultiRewardManager(RewardManager):
         if isinstance(weights, (float, int)):
             w = torch.full((env_idx.shape[0],), float(weights), dtype=torch.float, device=self.device)
         else:
-            w = torch.as_tensor(list(weights), dtype=torch.float, device=self.device)
+            w = torch.as_tensor(weights, dtype=torch.float, device=self.device)
             if w.numel() != env_idx.numel():
                 raise ValueError("weights length must match env_ids length")
         buf[env_idx] = w

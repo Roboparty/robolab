@@ -29,11 +29,11 @@ def sub_terrain_out_of_bounds(
 
         # check if the agent is out of bounds
         x_out_of_bounds = (
-            torch.abs(asset.data.root_pos_w[:, 0] - env.scene.terrain.env_origins[:, 0])
+            torch.abs(asset.data.root_pos_w.torch[:, 0] - env.scene.terrain.env_origins[:, 0])
             > 0.5 * grid_width - distance_buffer
         )
         y_out_of_bounds = (
-            torch.abs(asset.data.root_pos_w[:, 1] - env.scene.terrain.env_origins[:, 1])
+            torch.abs(asset.data.root_pos_w.torch[:, 1] - env.scene.terrain.env_origins[:, 1])
             > 0.5 * grid_length - distance_buffer
         )
         return torch.logical_or(x_out_of_bounds, y_out_of_bounds)
@@ -48,4 +48,4 @@ def root_height_below_env_origin_minimum(
     # extract the used quantities (to enable type-hinting)
     asset: RigidObject = env.scene[asset_cfg.name]
     terrain_base_height = torch.clamp(env.scene.env_origins[:, 2], max=0.0)
-    return asset.data.root_pos_w[:, 2] - terrain_base_height < minimum_height
+    return asset.data.root_pos_w.torch[:, 2] - terrain_base_height < minimum_height

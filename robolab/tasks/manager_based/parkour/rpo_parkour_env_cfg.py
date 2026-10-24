@@ -6,7 +6,7 @@ from isaaclab.utils import configclass
 from robolab import ROBOLAB_ROOT_DIR
 from robolab.assets.robots.roboparty import RPO_CFG, RPO_LINKS
 from robolab.sensors import get_link_prim_targets
-from robolab.tasks.manager_based.parkour.parkour_env_cfg import ROUGH_TERRAINS_CFG, ParkourEnvCfg
+from robolab.tasks.manager_based.parkour.parkour_env_cfg import KEY_BODY_NAMES, ROUGH_TERRAINS_CFG, ParkourEnvCfg
 
 RPO_CFG.init_state.pos = (0.0, 0.0, 0.85)
 AMP_NUM_STEPS = 3
@@ -27,8 +27,9 @@ class RPOParkourRoughEnvCfg(ParkourEnvCfg):
         self.scene.robot = RPO_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.camera.mesh_prim_paths.extend(get_link_prim_targets(RPO_LINKS))
         self.motion_data.motion_dataset.motion_data_dir = os.path.join(
-            ROBOLAB_ROOT_DIR, "data", "motions", "rpo_lab"
+            ROBOLAB_ROOT_DIR, "data", "motions", "rpo_amp"
         )
+        self.motion_data.motion_dataset.key_body_names = KEY_BODY_NAMES
         self.motion_data.motion_dataset.motion_data_weights = {
             "36_01": 1,
             "36_11": 1,

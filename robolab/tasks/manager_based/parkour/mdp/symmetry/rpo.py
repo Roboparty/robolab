@@ -35,7 +35,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 
-"""Functions to specify the symmetry in the observation and action space for ANYmal."""
+"""Left-right symmetry in the RPO observation and action spaces."""
 
 from __future__ import annotations
 
@@ -58,12 +58,8 @@ def compute_symmetric_states(
 ):
     """Augments the given observations and actions by applying symmetry transformations.
 
-    ``env`` is kept for compatibility with RSL-RL's symmetry callback signature.
-
-    This function creates augmented versions of the provided observations and actions by applying
-    four symmetrical transformations: original, left-right, front-back, and diagonal. The symmetry
-    transformations are beneficial for reinforcement learning tasks by providing additional
-    diverse data without requiring additional data collection.
+    The original batch is followed by its left-right mirror. Vector observations and
+    the separate depth group retain their configured shapes.
 
     Args:
         env: The environment instance.
@@ -78,19 +74,18 @@ def compute_symmetric_states(
     if obs is not None:
         batch_size = obs.batch_size[0]
         # since we have 2 different symmetries, we need to augment the batch size by 2
-        obs_aug = obs.repeat(2)
+        obs_aug = obs.repeat(2, *([1] * (obs.batch_dims - 1)))
 
-        # policy observation group
-        # -- original
         obs_aug["policy"][:batch_size] = obs["policy"][:]
-        # -- left-right
-        obs_aug["policy"][batch_size : 2 * batch_size] = _transform_policy_obs_left_right(obs["policy"])
-
-        # critic observation group
-        # -- original
+        obs_aug["policy"][batch_size : 2 * batch_size] = _transform_policy_obs_left_right(
+            env, obs["policy"], _joint_names(env)
+        )
         obs_aug["critic"][:batch_size] = obs["critic"][:]
-        # -- left-right
-        obs_aug["critic"][batch_size : 2 * batch_size] = _transform_critic_obs_left_right(env, obs["critic"])
+        obs_aug["critic"][batch_size : 2 * batch_size] = _transform_critic_obs_left_right(
+            env, obs["critic"], _joint_names(env)
+        )
+        obs_aug["depth"][:batch_size] = obs["depth"][:]
+        obs_aug["depth"][batch_size : 2 * batch_size] = _transform_depth_obs_left_right(obs["depth"])
 
     else:
         obs_aug = None
@@ -99,11 +94,11 @@ def compute_symmetric_states(
     if actions is not None:
         batch_size = actions.shape[0]
         # since we have 2 different symmetries, we need to augment the batch size by 2
-        actions_aug = torch.zeros(batch_size * 2, actions.shape[1], device=actions.device)
+        actions_aug = torch.empty((batch_size * 2, *actions.shape[1:]), device=actions.device, dtype=actions.dtype)
         # -- original
         actions_aug[:batch_size] = actions[:]
         # -- left-right
-        actions_aug[batch_size : 2 * batch_size] = _transform_actions_left_right(actions)
+        actions_aug[batch_size : 2 * batch_size] = _transform_actions_left_right(actions, _joint_names(env))
 
     else:
         actions_aug = None
@@ -137,38 +132,59 @@ def _height_scan_left_right_dims(env: ManagerBasedRLEnv) -> tuple[int, int, int]
 def _transform_height_scan_left_right(env: ManagerBasedRLEnv, hs: torch.Tensor) -> torch.Tensor:
     """Mirror lateral (y) grid rows; scalars only reorder (unlike ``depth_image``, scan is flat w.r.t. spatial axes)."""
     hist, ny, nx = _height_scan_left_right_dims(env)
-    out = hs.view(hs.shape[0], hist, ny, nx).flip(dims=[2])
+    out = hs.reshape(*hs.shape[:-1], hist, ny, nx).flip(dims=[-2])
     return out.reshape(hs.shape)
 
 
-def _transform_policy_obs_left_right(obs: TensorDict) -> TensorDict:
-    """Left-right mirror for policy observations (``ObservationsCfg.PolicyCfg`` with ``concatenate_terms=False``)."""
+def _history_length(env: ManagerBasedRLEnv, group_name: str) -> int:
+    cfg = getattr(env, "unwrapped", env).cfg
+    group = getattr(cfg.observations, group_name)
+    return group.base_ang_vel.history_length
+
+
+def _transform_policy_obs_left_right(
+    env: ManagerBasedRLEnv, obs: torch.Tensor, joint_names: list[str] | None = None
+) -> torch.Tensor:
+    """Mirror the concatenated Parkour policy vector in its configured term order."""
+    history = _history_length(env, "policy")
+    joint_dim = len(joint_names) if joint_names else 23
     obs = obs.clone()
-    obs["base_ang_vel"] = _apply_xyz_sign(obs["base_ang_vel"], [-1, 1, -1])
-    obs["projected_gravity"] = _apply_xyz_sign(obs["projected_gravity"], [1, -1, 1])
-    obs["velocity_commands"] = _apply_xyz_sign(obs["velocity_commands"], [1, -1, -1])
-    obs["joint_pos"] = _switch_joints_left_right_flat(obs["joint_pos"])
-    obs["joint_vel"] = _switch_joints_left_right_flat(obs["joint_vel"])
-    obs["actions"] = _switch_joints_left_right_flat(obs["actions"])
-    if "depth_image" in obs:
-        obs["depth_image"] = _transform_depth_obs_left_right(obs["depth_image"])
+    offset = 0
+    for signs in ([-1, 1, -1], [1, -1, 1], [1, -1, -1]):
+        width = history * 3
+        obs[..., offset : offset + width] = _apply_xyz_sign(obs[..., offset : offset + width], signs)
+        offset += width
+    for _ in range(3):
+        width = history * joint_dim
+        obs[..., offset : offset + width] = _switch_joints_left_right_flat(
+            obs[..., offset : offset + width], joint_names
+        )
+        offset += width
     return obs
 
 
-def _transform_critic_obs_left_right(env: ManagerBasedRLEnv, obs: TensorDict) -> TensorDict:
-    """Left-right mirror for critic observations."""
+def _transform_critic_obs_left_right(
+    env: ManagerBasedRLEnv, obs: torch.Tensor, joint_names: list[str] | None = None
+) -> torch.Tensor:
+    """Mirror the concatenated Parkour critic vector in its configured term order."""
+    history = _history_length(env, "critic")
+    joint_dim = len(joint_names) if joint_names else 23
     obs = obs.clone()
-    obs["base_lin_vel"] = _apply_xyz_sign(obs["base_lin_vel"], [1, -1, 1])
-    obs["base_ang_vel"] = _apply_xyz_sign(obs["base_ang_vel"], [-1, 1, -1])
-    obs["projected_gravity"] = _apply_xyz_sign(obs["projected_gravity"], [1, -1, 1])
-    obs["velocity_commands"] = _apply_xyz_sign(obs["velocity_commands"], [1, -1, -1])
-    obs["joint_pos"] = _switch_joints_left_right_flat(obs["joint_pos"])
-    obs["joint_vel"] = _switch_joints_left_right_flat(obs["joint_vel"])
-    obs["actions"] = _switch_joints_left_right_flat(obs["actions"])
-    if "depth_image" in obs:
-        obs["depth_image"] = _transform_depth_obs_left_right(obs["depth_image"])
-    if "height_scan" in obs:
-        obs["height_scan"] = _transform_height_scan_left_right(env, obs["height_scan"])
+    offset = 0
+    for signs in ([1, -1, 1], [-1, 1, -1], [1, -1, 1], [1, -1, -1]):
+        width = history * 3
+        obs[..., offset : offset + width] = _apply_xyz_sign(obs[..., offset : offset + width], signs)
+        offset += width
+    for _ in range(3):
+        width = history * joint_dim
+        obs[..., offset : offset + width] = _switch_joints_left_right_flat(
+            obs[..., offset : offset + width], joint_names
+        )
+        offset += width
+    height_width = obs.shape[-1] - offset
+    obs[..., offset : offset + height_width] = _transform_height_scan_left_right(
+        env, obs[..., offset : offset + height_width]
+    )
     return obs
 
 
@@ -184,10 +200,10 @@ def _apply_xyz_sign(obs: torch.Tensor, signs: list[int]) -> torch.Tensor:
     return obs.reshape(obs_shape)
 
 
-def _switch_joints_left_right_flat(joint_data: torch.Tensor) -> torch.Tensor:
+def _switch_joints_left_right_flat(joint_data: torch.Tensor, joint_names: list[str] | None = None) -> torch.Tensor:
     joint_data_shape = joint_data.shape
-    joint_data = joint_data.reshape(*joint_data_shape[:-1], -1, 23)
-    joint_data = _switch_joints_left_right(joint_data)
+    joint_data = joint_data.reshape(*joint_data_shape[:-1], -1, len(joint_names) if joint_names else 23)
+    joint_data = _switch_joints_left_right(joint_data, joint_names)
     return joint_data.reshape(joint_data_shape)
 
 
@@ -196,7 +212,7 @@ Symmetry functions for actions.
 """
 
 
-def _transform_actions_left_right(actions: torch.Tensor) -> torch.Tensor:
+def _transform_actions_left_right(actions: torch.Tensor, joint_names: list[str] | None = None) -> torch.Tensor:
     """Applies a left-right symmetry transformation to the actions tensor.
 
     This function modifies the given actions tensor by applying transformations
@@ -211,7 +227,7 @@ def _transform_actions_left_right(actions: torch.Tensor) -> torch.Tensor:
         The transformed actions tensor with left-right symmetry applied.
     """
     actions = actions.clone()
-    actions[:] = _switch_joints_left_right(actions[:])
+    actions[:] = _switch_joints_left_right(actions[:], joint_names)
     return actions
 
 
@@ -248,8 +264,25 @@ In Isaac Sim, the joint ordering is as follows:
 """
 
 
-def _switch_joints_left_right(joint_data: torch.Tensor) -> torch.Tensor:
+def _joint_names(env: ManagerBasedRLEnv) -> list[str] | None:
+    scene = getattr(getattr(env, "unwrapped", env), "scene", None)
+    return scene["robot"].joint_names if scene is not None else None
+
+
+def _switch_joints_left_right(joint_data: torch.Tensor, joint_names: list[str] | None = None) -> torch.Tensor:
     """Applies a left-right symmetry transformation to the joint data tensor."""
+    if joint_names is not None:
+        mirrored_names = [
+            "right_" + name[5:] if name.startswith("left_") else
+            "left_" + name[6:] if name.startswith("right_") else name
+            for name in joint_names
+        ]
+        indices = torch.tensor([joint_names.index(name) for name in mirrored_names], device=joint_data.device)
+        signs = torch.tensor([
+            -1 if name == "torso_joint" or name.endswith(("_yaw_joint", "_roll_joint")) else 1
+            for name in joint_names
+        ], device=joint_data.device, dtype=joint_data.dtype)
+        return joint_data[..., indices] * signs
     joint_data_switched = joint_data.clone()
     # left <-- right
     joint_data_switched[..., [0, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]] = joint_data[..., [1, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]]
