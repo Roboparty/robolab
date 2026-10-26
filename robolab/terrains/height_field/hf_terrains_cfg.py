@@ -15,12 +15,12 @@ from isaaclab.utils import configclass
 
 from . import hf_terrains
 
-
 class WallTerrainCfgMixin:
     wall_prob: List[float] = [0.0, 0.0, 0.0, 0.0]  # Probability of generating walls on [left, right, front, back] sides
     wall_height: float = 5.0  # Height of the walls
     wall_thickness: float = 0.05  # Thickness of the walls
-
+    preserve_heightfield_samples: bool = True
+    """Keep authored parkour surfaces when converting to triangle meshes."""
 
 @configclass
 class PerlinPlaneTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
@@ -35,30 +35,57 @@ class PerlinPlaneTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
 
     centering = False  # If True, the noise will be centered around 0
 
-
 @configclass
 class PerlinPyramidSlopedTerrainCfg(HfPyramidSlopedTerrainCfg, WallTerrainCfgMixin):
     function = hf_terrains.perlin_pyramid_sloped_terrain
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
-
 
 @configclass
 class PerlinInvertedPyramidSlopedTerrainCfg(HfInvertedPyramidSlopedTerrainCfg, WallTerrainCfgMixin):
     function = hf_terrains.perlin_pyramid_sloped_terrain
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
 
-
 @configclass
 class PerlinPyramidStairsTerrainCfg(HfPyramidStairsTerrainCfg, WallTerrainCfgMixin):
     function = hf_terrains.perlin_pyramid_stairs_terrain
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
-
 
 @configclass
 class PerlinInvertedPyramidStairsTerrainCfg(HfInvertedPyramidStairsTerrainCfg, WallTerrainCfgMixin):
     function = hf_terrains.perlin_pyramid_stairs_terrain
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
 
+@configclass
+class PerlinPlatformsTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
+    """Concentric square platform rings alternating with flat ground."""
+
+    function = hf_terrains.perlin_platforms_terrain
+
+    platform_height_range: tuple[float, float] = (0.05, 0.4)
+    """Raised-ring height range in meters, interpolated by terrain difficulty."""
+
+    band_width: float = 0.5
+    """Width of every raised square ring (deck) in meters.
+
+    Ignored when ``band_width_range`` is set.
+    """
+
+    band_width_range: tuple[float, float] | None = None
+    """Optional deck-width range in meters, interpolated by terrain difficulty."""
+
+    gap_width: float | None = None
+    """Width of the flat ring between raised decks in meters.
+
+    ``None`` uses ``band_width`` so raised and flat rings stay equal.
+    """
+
+    platform_width: float = 2.0
+    """Width of the square flat region at the terrain center in meters."""
+
+    border_width: float = 0.5
+    """Flat margin retained at the terrain border in meters."""
+
+    perlin_cfg: PerlinPlaneTerrainCfg | None = None
 
 @configclass
 class PerlinInvertedPyramidStairsGroundAlignedTerrainCfg(HfInvertedPyramidStairsTerrainCfg, WallTerrainCfgMixin):
@@ -71,18 +98,15 @@ class PerlinDiscreteObstaclesTerrainCfg(HfDiscreteObstaclesTerrainCfg, WallTerra
     function = hf_terrains.perlin_discrete_obstacles_terrain
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
 
-
 @configclass
 class PerlinWaveTerrainCfg(HfWaveTerrainCfg, WallTerrainCfgMixin):
     function = hf_terrains.perlin_wave_terrain
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
 
-
 @configclass
 class PerlinSteppingStonesTerrainCfg(HfSteppingStonesTerrainCfg, WallTerrainCfgMixin):
     function = hf_terrains.perlin_stepping_stones_terrain
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
-
 
 # -- Newly added terrain configurations for parkour terrains-- #
 @configclass
@@ -97,7 +121,6 @@ class PerlinParapetTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
     """The rate to generate curved top. If None, the top will be flat."""
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
 
-
 @configclass
 class PerlinGutterTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
     """Configuration for a gutter parkour terrain."""
@@ -107,7 +130,6 @@ class PerlinGutterTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
     gutter_depth: tuple[float, float] | float = (0.1, 0.3)  # the depth of the gutter
     gutter_width: float | None = None  # the length of the gutter
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
-
 
 @configclass
 class PerlinStairsUpDownTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
@@ -128,7 +150,6 @@ class PerlinStairsUpDownTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
 
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
 
-
 @configclass
 class PerlinStairsDownUpTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
     """Configuration for a stairs down and up parkour terrain."""
@@ -148,7 +169,6 @@ class PerlinStairsDownUpTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
 
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
 
-
 @configclass
 class PerlinTiltTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
     """Configuration for a tilt terrain."""
@@ -160,7 +180,6 @@ class PerlinTiltTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
     wall_opening_angle: tuple[float, float] | float = MISSING  # in degrees
     wall_opening_width: tuple[float, float] | float = MISSING
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
-
 
 @configclass
 class PerlinTiltedRampTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
@@ -176,7 +195,6 @@ class PerlinTiltedRampTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
     overlap_size: float | None = None
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
 
-
 @configclass
 class PerlinSlopeTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
     """Configuration for a slope up and down terrain with a flat ground in the middle."""
@@ -188,7 +206,6 @@ class PerlinSlopeTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
     slope_width: float | None = None
     up_down: bool | None = None  # If True or None, the slope will be up and down, otherwise it will be down and up.
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
-
 
 @configclass
 class PerlinCrossStoneTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
@@ -202,7 +219,6 @@ class PerlinCrossStoneTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):
     platform_width: float = 1.5
     xy_random_ratio: float = 0.2
     perlin_cfg: PerlinPlaneTerrainCfg | None = None
-
 
 @configclass
 class PerlinSquareGapTerrainCfg(HfTerrainBaseCfg, WallTerrainCfgMixin):

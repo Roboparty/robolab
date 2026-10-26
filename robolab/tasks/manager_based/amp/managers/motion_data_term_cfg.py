@@ -58,5 +58,8 @@ class MotionDataTermCfg:
     """Fallback order for legacy files without quaternion_order metadata."""
 
     key_body_names: list[str] | None = None
-    """Desired key-body order when motion files include key_body_names metadata."""
+    """Ordered key-body names; always computed at startup via Newton FK from dof/root."""
+
+    target_fps: float | None = 120.0
+    """Resample every loaded clip to this rate before FK / velocity diffs. ``None`` keeps native fps."""
 

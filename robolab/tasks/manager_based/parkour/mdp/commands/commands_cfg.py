@@ -46,6 +46,9 @@ class PoseVelocityCommandCfg(CommandTermCfg):
     random_velocity_terrain: list[str] = None
     """List of terrain types for which the velocity commands should be randomized."""
 
+    signed_target_velocity_axes: dict[str, str] | None = None
+    """Target-driven terrains whose signed speed is commanded along body ``x`` or ``y``."""
+
     velocity_ranges: dict = None
     """Dictionary containing velocity ranges for different terrains. If not None, the velocity ranges will be set based on the terrain type."""
 
@@ -63,9 +66,6 @@ class PoseVelocityCommandCfg(CommandTermCfg):
 
     rel_standing_envs: float = 0.0
     """The sampled probability of environments that should be standing still. Defaults to 0.0."""
-
-    straight_target_prob: float = 0.0
-    """Probability of forcing the sampled target y to the robot's current y for straight walking."""
 
     target_dis_threshold: float = 0.2
     """The distance threshold to the target position below which the command is set to zero. Defaults to 0.2."""
