@@ -248,11 +248,6 @@ class RP1AmpEnvCfg(AmpEnvCfg):
         self.rewards.feet_distance.weight = 0.1
         self.rewards.feet_slide.weight = -0.3
 
-        self.rewards.undesired_contacts.weight = -0.5
-        self.rewards.undesired_contacts.params["sensor_cfg"] = SceneEntityCfg(
-            "contact_forces",
-        )
-
         self.terminations.base_contact.params["sensor_cfg"].body_names = [
             ".*_hip_pitch_link",
             ".*_hip_roll_link",
@@ -274,7 +269,6 @@ class RP1AmpEnvCfg_PLAY(RP1AmpEnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
-        self.scene.terrain.terrain_type = "plane"
         self.scene.num_envs = 1
         self.scene.env_spacing = 2.5
         self.episode_length_s = 40.0

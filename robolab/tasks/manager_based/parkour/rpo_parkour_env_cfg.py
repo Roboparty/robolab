@@ -19,7 +19,6 @@ KEY_BODY_NAMES = [
     "right_elbow_yaw_link",
 ]
 
-RPO_CFG.init_state.pos = (0.0, 0.0, 0.85)
 AMP_NUM_STEPS = 3
 
 FEET_VOLUME_POINTS_GRID = Grid3dPointsGeneratorCfg(
@@ -68,6 +67,7 @@ class RPOParkourRoughEnvCfg(ParkourEnvCfg):
         super().__post_init__()
         self.scene.terrain.terrain_generator = ROUGH_TERRAINS_CFG
         self.scene.robot = RPO_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot.init_state.pos = (0.0, 0.0, 0.85)
         self.scene.leg_volume_points.points_generator = FEET_VOLUME_POINTS_GRID
         self.scene.knee_volume_points.points_generator = KNEE_VOLUME_POINTS_GRID
         for scanner_cfg in (

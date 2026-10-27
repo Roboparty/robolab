@@ -1,30 +1,22 @@
 # Copyright (c) 2025-2026, The RoboLab Project Developers.
 # SPDX-License-Identifier: BSD-3-Clause
 
-from isaaclab.utils import configclass
+import isaaclab.sim as sim_utils
 from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import RewardTermCfg as RewTerm, SceneEntityCfg
+from isaaclab.markers import VisualizationMarkersCfg
 from isaaclab.sensors import ContactSensorCfg
+from isaaclab.utils import configclass
 from isaaclab_tasks.utils import preset
-
 from isaaclab_physx.physics import PhysxCfg
 
-from robolab.assets.robots.roboparty import (
-    RP1_24DOF_CFG,
-    RP1_BODY_ORDER,
-    RP1_BASE_PRIM_PATH,
-    RP1_FOOT_BODY_NAMES,
-    RP1_LEFT_FOOT_PRIM_PATH,
-    RP1_RIGHT_FOOT_PRIM_PATH,
-)
+from robolab.assets.robots.roboparty import RP1_24DOF_CFG, RP1_BODY_ORDER
+from robolab.tasks.direct.base import mdp
+from robolab.tasks.direct.base.base_config import BaseEnvCfg, RewardCfg
 from robolab.tasks.direct.base.scene_cfg import SceneCfg, configure_self_contact_sensors
 from robolab.utils.physics import PhysicsPresetCfg
-from .interrupt_env_cfg import ArmClearanceCfg, InterruptCfg
 
-import isaaclab.sim as sim_utils
-from isaaclab.markers import VisualizationMarkersCfg
-from isaaclab.managers import RewardTermCfg as RewTerm, SceneEntityCfg
-from robolab.tasks.direct.base.base_config import BaseEnvCfg, RewardCfg
-from robolab.tasks.direct.base import mdp
+from .interrupt_env_cfg import ArmClearanceCfg, InterruptCfg
 
 RP1_INTERRUPT_JOINT_NAMES = (
     "left_shoulder_pitch_joint",
@@ -250,16 +242,11 @@ class RP1InterruptEnvCfg(BaseEnvCfg):
             reverse_elbow_yaw_scale=0.8,
         ),
         use_interrupt=True,
-        max_curriculum=1.0,
         # Preserve RPO's 4 m threshold on RP1's flat scene.
         curriculum_pass_distance=4.0,
-        interrupt_ratio=0.5,
         interrupt_joint_names=list(RP1_INTERRUPT_JOINT_NAMES),
         interrupt_scale=list(RP1_INTERRUPT_SCALE),
         interrupt_lower_bound=list(RP1_INTERRUPT_LOWER_BOUND),
-        interrupt_init_range=0.2,
-        interrupt_update_step=30,
-        switch_prob=0.005,
     )
     interrupt_vis = VisualizationMarkersCfg(
         markers={
@@ -277,9 +264,7 @@ class RP1InterruptEnvCfg(BaseEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
-        self.robot.action_scale = 0.25
         self.noise.noise_scales.joint_vel = 0.5
-        self.noise.noise_scales.joint_pos = 0.01
         self.action_space = 24
         self.observation_space = 246
         self.state_space = 435
@@ -293,14 +278,12 @@ class RP1InterruptEnvCfg(BaseEnvCfg):
         self.noise.add_height_scan_noise = False
         self.normalization.clip_observations = float("inf")
         self.normalization.clip_actions = float("inf")
-        self.scene_context.num_envs = 4096
         self.scene_context.terrain_type = "plane"
-        self.scene_context.terrain_generator = None
         self.scene_context.robot = RP1_24DOF_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene_context.height_scanner.prim_body_name = "base_link"
         self.sim.physics = PhysicsPresetCfg()
         self.sim.physics.isaacsim_physx = PhysxCfg()
-        self.robot.feet_body_names = list(RP1_FOOT_BODY_NAMES)
+        self.robot.feet_body_names = ["left_ankle_roll_link", "right_ankle_roll_link"]
         self.events.add_base_mass.params["asset_cfg"].body_names = ["waist_yaw_link"]
         self.events.add_base_mass.params["mass_distribution_params"] = (-2.0, 2.0)
         self.events.randomize_rigid_body_com.params["asset_cfg"].body_names = ["waist_yaw_link"]
@@ -321,11 +304,15 @@ class RP1InterruptEnvCfg(BaseEnvCfg):
         self.scene = SceneCfg(config=self.scene_context, physics_dt=self.sim.dt, step_dt=self.decimation * self.sim.dt)
         configure_self_contact_sensors(self.scene, "contact_sensor", self.sim.dt, RP1_BODY_ORDER)
         if self.scene_context.height_scanner.enable_height_scan:
-            self.scene.left_feet_scanner.prim_path = RP1_LEFT_FOOT_PRIM_PATH
-            self.scene.right_feet_scanner.prim_path = RP1_RIGHT_FOOT_PRIM_PATH
-            self.scene.left_feet_scanner.debug_vis = False
-            self.scene.right_feet_scanner.debug_vis = False
-            self.scene.height_scanner.prim_path = RP1_BASE_PRIM_PATH
+            base_path = "{ENV_REGEX_NS}/Robot/Geometry/base_link"
+            for side in ("left", "right"):
+                scanner = getattr(self.scene, f"{side}_feet_scanner")
+                scanner.prim_path = (
+                    f"{base_path}/{side}_hip_pitch_link/{side}_hip_roll_link/{side}_hip_yaw_link/"
+                    f"{side}_knee_link/{side}_ankle_pitch_link/{side}_ankle_roll_link"
+                )
+                scanner.debug_vis = False
+            self.scene.height_scanner.prim_path = base_path
         else:
             self.scene.left_feet_scanner = None
             self.scene.right_feet_scanner = None
@@ -343,7 +330,7 @@ class RP1InterruptEnvCfg(BaseEnvCfg):
                 self.scene,
                 name,
                 ContactSensorCfg(
-                    prim_path=f"{RP1_BASE_PRIM_PATH}/{path}",
+                    prim_path="{ENV_REGEX_NS}/Robot/Geometry/base_link/" + path,
                     filter_prim_paths_expr=preset(
                         default=[],
                         isaacsim_physx=["/World/ground/terrain/GroundPlane/CollisionPlane"],

@@ -30,8 +30,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-from pathlib import Path
-
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import DelayedPDActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
@@ -40,7 +38,7 @@ from isaaclab_physx.sim.schemas import PhysxArticulationCfg
 from isaaclab_tasks.utils import preset
 
 from robolab.assets import ISAAC_DATA_DIR
-from robolab.assets.robots.rp1_actuators import RP1ActuatorCfg
+from robolab.assets.robots.roboparty_actuators import RobopartyActuatorCfg
 
 # Keep legacy policy and motion-file coordinates identical across solvers.
 RPO_JOINT_ORDER = (
@@ -210,10 +208,6 @@ RPO_LINKS = [
 ]
 
 
-RP1_ASSET_DIR = Path(ISAAC_DATA_DIR).resolve() / "robots/roboparty/rp1"
-RP1_USD_DIR = Path(ISAAC_DATA_DIR).resolve() / "generated/rp1"
-RP1_MJCF_PATH = str(RP1_ASSET_DIR / "mjcf/robot_24dof.xml")
-
 # These coordinates match the published RP1 motion archives on either solver.
 RP1_JOINT_ORDER = (
     "left_hip_pitch_joint", "left_hip_roll_joint", "left_hip_yaw_joint",
@@ -227,64 +221,14 @@ RP1_JOINT_ORDER = (
     "right_elbow_joint", "right_wrist_joint",
 )
 RP1_BODY_ORDER = ("base_link", *(name.removesuffix("_joint") + "_link" for name in RP1_JOINT_ORDER))
-RP1_FOOT_BODY_NAMES = ("left_ankle_roll_link", "right_ankle_roll_link")
-RP1_BASE_PRIM_PATH = "{ENV_REGEX_NS}/Robot/Geometry/base_link"
-RP1_LEFT_FOOT_PRIM_PATH = (
-    RP1_BASE_PRIM_PATH + "/left_hip_pitch_link/left_hip_roll_link/left_hip_yaw_link/"
-    "left_knee_link/left_ankle_pitch_link/left_ankle_roll_link"
-)
-RP1_RIGHT_FOOT_PRIM_PATH = (
-    RP1_BASE_PRIM_PATH + "/right_hip_pitch_link/right_hip_roll_link/right_hip_yaw_link/"
-    "right_knee_link/right_ankle_pitch_link/right_ankle_roll_link"
-)
-RP1_DEFAULT_JOINT_POS = dict.fromkeys(RP1_JOINT_ORDER, 0.0)
-RP1_DEFAULT_JOINT_POS.update({
-    "left_hip_pitch_joint": -0.1,
-    "left_knee_joint": -0.3,
-    "left_ankle_pitch_joint": -0.2,
-    "left_shoulder_pitch_joint": 0.2,
-    "left_shoulder_roll_joint": 0.2,
-    "left_elbow_joint": -1.2,
-    "right_hip_pitch_joint": 0.1,
-    "right_knee_joint": 0.3,
-    "right_ankle_pitch_joint": -0.2,
-    "right_shoulder_pitch_joint": -0.2,
-    "right_shoulder_roll_joint": -0.2,
-    "right_elbow_joint": 1.2,
-})
-
-RP1_EFFORT_LIMITS = {
-    ".*(waist|hip_(pitch|roll)|knee).*": 140.0,
-    ".*(hip_yaw|shoulder_pitch).*": 55.0,
-    ".*_ankle_(pitch|roll).*": 64.0,
-    ".*(shoulder_(roll|yaw)|elbow|wrist).*": 32.0,
-}
-RP1_VELOCITY_LIMITS = {
-    ".*(waist|hip_(pitch|roll)|knee).*": 13.61357,
-    ".*(hip_yaw|shoulder_pitch).*": 16.23156,
-    ".*_ankle_(pitch|roll).*": 15.70796,
-    ".*(shoulder_(roll|yaw)|elbow|wrist).*": 15.70796,
-}
-RP1_RATED_EFFORT = {
-    ".*(waist|hip_(pitch|roll)|knee).*": 44.0,
-    ".*(hip_yaw|shoulder_pitch).*": 14.0,
-    ".*_ankle_(pitch|roll).*": 20.0,
-    ".*(shoulder_(roll|yaw)|elbow|wrist).*": 10.0,
-}
-RP1_RATED_VELOCITY = {
-    ".*(waist|hip_(pitch|roll)|knee).*": 8.37758,
-    ".*(hip_yaw|shoulder_pitch).*": 6.28319,
-    ".*_ankle_(pitch|roll).*": 6.28319,
-    ".*(shoulder_(roll|yaw)|elbow|wrist).*": 6.28319,
-}
 
 RP1_24DOF_CFG = ArticulationCfg(
     spawn=sim_utils.MjcfFileCfg(
-        asset_path=RP1_MJCF_PATH,
+        asset_path=f"{ISAAC_DATA_DIR}/robots/roboparty/rp1/mjcf/robot_24dof.xml",
         usd_dir=preset(
-            default=str(RP1_USD_DIR / "mujoco"),
-            isaacsim_physx=str(RP1_USD_DIR / "physx"),
-            newton_mjwarp=str(RP1_USD_DIR / "mujoco"),
+            default=f"{ISAAC_DATA_DIR}/generated/rp1/mujoco",
+            isaacsim_physx=f"{ISAAC_DATA_DIR}/generated/rp1/physx",
+            newton_mjwarp=f"{ISAAC_DATA_DIR}/generated/rp1/mujoco",
         ),
         physics_variant=preset(
             default="mujoco",
@@ -305,27 +249,71 @@ RP1_24DOF_CFG = ArticulationCfg(
     ),
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.78),
-        joint_pos=RP1_DEFAULT_JOINT_POS.copy(),
+        joint_pos={
+            **dict.fromkeys(RP1_JOINT_ORDER, 0.0),
+            "left_hip_pitch_joint": -0.1,
+            "left_knee_joint": -0.3,
+            "left_ankle_pitch_joint": -0.2,
+            "left_shoulder_pitch_joint": 0.2,
+            "left_shoulder_roll_joint": 0.2,
+            "left_elbow_joint": -1.2,
+            "right_hip_pitch_joint": 0.1,
+            "right_knee_joint": 0.3,
+            "right_ankle_pitch_joint": -0.2,
+            "right_shoulder_pitch_joint": -0.2,
+            "right_shoulder_roll_joint": -0.2,
+            "right_elbow_joint": 1.2,
+        },
         joint_vel={".*": 0.0},
     ),
     soft_joint_pos_limit_factor=0.90,
     joint_ordering=RP1_JOINT_ORDER,
     body_ordering=RP1_BODY_ORDER,
     actuators={
-        "all_joints": RP1ActuatorCfg(
+        "all_joints": RobopartyActuatorCfg(
             joint_names_expr=[".*"],
-            actuator_effort_limit=RP1_EFFORT_LIMITS.copy(),
-            actuator_velocity_limit=RP1_VELOCITY_LIMITS.copy(),
-            joint_effort_limit=RP1_EFFORT_LIMITS.copy(),
-            joint_velocity_limit=RP1_VELOCITY_LIMITS.copy(),
+            actuator_effort_limit={
+                ".*(waist|hip_(pitch|roll)|knee).*": 140.0,
+                ".*(hip_yaw|shoulder_pitch).*": 55.0,
+                ".*_ankle_(pitch|roll).*": 64.0,
+                ".*(shoulder_(roll|yaw)|elbow|wrist).*": 32.0,
+            },
+            actuator_velocity_limit={
+                ".*(waist|hip_(pitch|roll)|knee).*": 13.61357,
+                ".*(hip_yaw|shoulder_pitch).*": 16.23156,
+                ".*_ankle_(pitch|roll).*": 15.70796,
+                ".*(shoulder_(roll|yaw)|elbow|wrist).*": 15.70796,
+            },
+            joint_effort_limit={
+                ".*(waist|hip_(pitch|roll)|knee).*": 140.0,
+                ".*(hip_yaw|shoulder_pitch).*": 55.0,
+                ".*_ankle_(pitch|roll).*": 64.0,
+                ".*(shoulder_(roll|yaw)|elbow|wrist).*": 32.0,
+            },
+            joint_velocity_limit={
+                ".*(waist|hip_(pitch|roll)|knee).*": 13.61357,
+                ".*(hip_yaw|shoulder_pitch).*": 16.23156,
+                ".*_ankle_(pitch|roll).*": 15.70796,
+                ".*(shoulder_(roll|yaw)|elbow|wrist).*": 15.70796,
+            },
             keep_velocity={
                 ".*(waist|hip_(pitch|roll)|knee).*": 8.37758,
                 ".*(hip_yaw|shoulder_pitch).*": 6.28319,
                 ".*_ankle_(pitch|roll).*": 14.66077,
                 ".*(shoulder_(roll|yaw)|elbow|wrist).*": 14.66077,
             },
-            rated_effort=RP1_RATED_EFFORT.copy(),
-            rated_velocity=RP1_RATED_VELOCITY.copy(),
+            rated_effort={
+                ".*(waist|hip_(pitch|roll)|knee).*": 44.0,
+                ".*(hip_yaw|shoulder_pitch).*": 14.0,
+                ".*_ankle_(pitch|roll).*": 20.0,
+                ".*(shoulder_(roll|yaw)|elbow|wrist).*": 10.0,
+            },
+            rated_velocity={
+                ".*(waist|hip_(pitch|roll)|knee).*": 8.37758,
+                ".*(hip_yaw|shoulder_pitch).*": 6.28319,
+                ".*_ankle_(pitch|roll).*": 6.28319,
+                ".*(shoulder_(roll|yaw)|elbow|wrist).*": 6.28319,
+            },
             stiffness={
                 ".*(waist|hip_(pitch|roll)|knee).*": 120.0,
                 ".*(hip_yaw|shoulder_pitch).*": 35.0,

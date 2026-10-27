@@ -9,14 +9,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.terrains.config.rough import ROUGH_TERRAINS_CFG as ISAACLAB_ROUGH_TERRAINS_CFG
 from isaaclab_physx.physics import PhysxCfg
 
-from robolab.assets.robots.roboparty import (
-    RP1_24DOF_CFG,
-    RP1_BODY_ORDER,
-    RP1_BASE_PRIM_PATH,
-    RP1_FOOT_BODY_NAMES,
-    RP1_LEFT_FOOT_PRIM_PATH,
-    RP1_RIGHT_FOOT_PRIM_PATH,
-)
+from robolab.assets.robots.roboparty import RP1_24DOF_CFG, RP1_BODY_ORDER
 
 from isaaclab.managers import RewardTermCfg as RewTerm
 from .base_config import BaseEnvCfg, RewardCfg
@@ -25,7 +18,26 @@ from .scene_cfg import SceneCfg, configure_self_contact_sensors
 from robolab.utils.physics import PhysicsPresetCfg, RoughPhysicsPresetCfg
 
 
-RP1_NON_FOOT_BODIES = [r"^(?!left_ankle_roll_link$)(?!right_ankle_roll_link$).+$"]
+@configclass
+class RP1SceneCfg(SceneCfg):
+    """RP1 contact filters and scanners for Direct locomotion tasks."""
+
+    def __init__(self, config, physics_dt, step_dt):
+        super().__init__(config=config, physics_dt=physics_dt, step_dt=step_dt)
+        configure_self_contact_sensors(self, "contact_sensor", physics_dt, RP1_BODY_ORDER)
+        if config.height_scanner.enable_height_scan:
+            base_path = "{ENV_REGEX_NS}/Robot/Geometry/base_link"
+            for side in ("left", "right"):
+                scanner = getattr(self, f"{side}_feet_scanner")
+                scanner.prim_path = (
+                    f"{base_path}/{side}_hip_pitch_link/{side}_hip_roll_link/{side}_hip_yaw_link/"
+                    f"{side}_knee_link/{side}_ankle_pitch_link/{side}_ankle_roll_link"
+                )
+                scanner.debug_vis = False
+            self.height_scanner.prim_path = base_path
+        else:
+            self.left_feet_scanner = None
+            self.right_feet_scanner = None
 
 
 @configclass
@@ -206,9 +218,7 @@ class RP1FlatEnvCfg(BaseEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
-        self.robot.action_scale = 0.25
         self.noise.noise_scales.joint_vel = 0.5
-        self.noise.noise_scales.joint_pos = 0.01
         self.action_space = 24
         self.observation_space = 243
         self.state_space = 432
@@ -222,15 +232,13 @@ class RP1FlatEnvCfg(BaseEnvCfg):
         self.noise.add_height_scan_noise = False
         self.normalization.clip_observations = float("inf")
         self.normalization.clip_actions = float("inf")
-        self.scene_context.num_envs = 4096
         self.scene_context.terrain_type = "plane"
-        self.scene_context.terrain_generator = None
         self.scene_context.robot = RP1_24DOF_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene_context.height_scanner.prim_body_name = "base_link"
         self.sim.physics = PhysicsPresetCfg()
         self.sim.physics.isaacsim_physx = PhysxCfg()
-        self.robot.terminate_contacts_body_names = list(RP1_NON_FOOT_BODIES)
-        self.robot.feet_body_names = list(RP1_FOOT_BODY_NAMES)
+        self.robot.terminate_contacts_body_names = [r"^(?!left_ankle_roll_link$)(?!right_ankle_roll_link$).+$"]
+        self.robot.feet_body_names = ["left_ankle_roll_link", "right_ankle_roll_link"]
         self.events.add_base_mass.params["asset_cfg"].body_names = ["waist_yaw_link"]
         self.events.add_base_mass.params["mass_distribution_params"] = (-2.0, 2.0)
         self.events.randomize_rigid_body_com.params["asset_cfg"].body_names = ["waist_yaw_link"]
@@ -248,17 +256,7 @@ class RP1FlatEnvCfg(BaseEnvCfg):
         self.events.scale_actuator_gains.params["damping_distribution_params"] = (0.8, 1.2)
         self.events.scale_joint_parameters.params["asset_cfg"].joint_names = [".*_joint"]
         self.events.scale_joint_parameters.params["friction_distribution_params"] = (0.8, 1.2)
-        self.scene = SceneCfg(config=self.scene_context, physics_dt=self.sim.dt, step_dt=self.decimation * self.sim.dt)
-        configure_self_contact_sensors(self.scene, "contact_sensor", self.sim.dt, RP1_BODY_ORDER)
-        if self.scene_context.height_scanner.enable_height_scan:
-            self.scene.left_feet_scanner.prim_path = RP1_LEFT_FOOT_PRIM_PATH
-            self.scene.right_feet_scanner.prim_path = RP1_RIGHT_FOOT_PRIM_PATH
-            self.scene.left_feet_scanner.debug_vis = False
-            self.scene.right_feet_scanner.debug_vis = False
-            self.scene.height_scanner.prim_path = RP1_BASE_PRIM_PATH
-        else:
-            self.scene.left_feet_scanner = None
-            self.scene.right_feet_scanner = None
+        self.scene = RP1SceneCfg(config=self.scene_context, physics_dt=self.sim.dt, step_dt=self.decimation * self.sim.dt)
 
 
 @configclass
@@ -273,17 +271,6 @@ class RP1RoughEnvCfg(RP1FlatEnvCfg):
         self.scene_context.terrain_generator.curriculum = True
         self.scene_context.terrain_generator.horizontal_scale = 0.1
         self.sim.physics = RoughPhysicsPresetCfg()
-        self.scene = SceneCfg(config=self.scene_context, physics_dt=self.sim.dt, step_dt=self.decimation * self.sim.dt)
-        configure_self_contact_sensors(self.scene, "contact_sensor", self.sim.dt, RP1_BODY_ORDER)
-        if self.scene_context.height_scanner.enable_height_scan:
-            self.scene.left_feet_scanner.prim_path = RP1_LEFT_FOOT_PRIM_PATH
-            self.scene.right_feet_scanner.prim_path = RP1_RIGHT_FOOT_PRIM_PATH
-            self.scene.left_feet_scanner.debug_vis = False
-            self.scene.right_feet_scanner.debug_vis = False
-            self.scene.height_scanner.prim_path = RP1_BASE_PRIM_PATH
-        else:
-            self.scene.left_feet_scanner = None
-            self.scene.right_feet_scanner = None
-        self.reward.feet_height.weight = 0.2
+        self.scene = RP1SceneCfg(config=self.scene_context, physics_dt=self.sim.dt, step_dt=self.decimation * self.sim.dt)
         self.reward.feet_height.params["sensor_cfg1"] = SceneEntityCfg("left_feet_scanner")
         self.reward.feet_height.params["sensor_cfg2"] = SceneEntityCfg("right_feet_scanner")
