@@ -9,7 +9,6 @@ from isaaclab.terrains import SubTerrainBaseCfg, TerrainGenerator
 if TYPE_CHECKING:
     from .terrain_generator_cfg import FiledTerrainGeneratorCfg
 
-
 class FiledTerrainGenerator(TerrainGenerator):
     """Terrain generator that records per-cell sub-terrain configs and indices."""
 
@@ -18,10 +17,16 @@ class FiledTerrainGenerator(TerrainGenerator):
         self.subterrain_index_grid: np.ndarray | None = None
         # Flat list: self._subterrain_specific_cfgs[row * num_cols + col]
         self._subterrain_specific_cfgs: list[SubTerrainBaseCfg] = []
+        # One column per sub-terrain: num_cols follows the number of types.
+        if cfg.one_col_per_subterrain:
+            cfg.num_cols = len(cfg.sub_terrains)
         super().__init__(cfg, device)
 
     def _get_terrain_mesh(self, difficulty: float, cfg: SubTerrainBaseCfg):
         """Record the specific config for each sub-terrain mesh generation."""
+        if self.cfg.preserve_heightfield_samples and hasattr(cfg, "preserve_heightfield_samples"):
+            cfg = cfg.copy()
+            cfg.preserve_heightfield_samples = True
         mesh, origin = super()._get_terrain_mesh(difficulty, cfg)
         cfg = cfg.copy()
         cfg.difficulty = float(difficulty)
@@ -49,11 +54,15 @@ class FiledTerrainGenerator(TerrainGenerator):
         proportions = np.array([sub_cfg.proportion for sub_cfg in self.cfg.sub_terrains.values()])
         proportions /= np.sum(proportions)
 
-        sub_indices = []
-        for index in range(self.cfg.num_cols):
-            sub_index = np.min(np.where(index / self.cfg.num_cols + 0.001 < np.cumsum(proportions))[0])
-            sub_indices.append(sub_index)
-        sub_indices = np.array(sub_indices, dtype=np.int32)
+        # One column per type, or map columns by cumulative proportion (Isaac Lab default).
+        if self.cfg.one_col_per_subterrain:
+            sub_indices = np.arange(self.cfg.num_cols, dtype=np.int32)
+        else:
+            sub_indices = []
+            for index in range(self.cfg.num_cols):
+                sub_index = np.min(np.where(index / self.cfg.num_cols + 0.001 < np.cumsum(proportions))[0])
+                sub_indices.append(sub_index)
+            sub_indices = np.array(sub_indices, dtype=np.int32)
         sub_terrains_cfgs = list(self.cfg.sub_terrains.values())
 
         self.subterrain_index_grid = np.zeros((self.cfg.num_rows, self.cfg.num_cols), dtype=np.int32)

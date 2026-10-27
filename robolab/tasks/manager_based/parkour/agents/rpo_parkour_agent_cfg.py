@@ -42,22 +42,24 @@ class RslRlPpoAmpAlgorithmCfg(RslRlPpoAlgorithmCfg):
 @configclass
 class RslRlEncoderMoEModelCfg(RslRlMLPModelCfg):
     class_name: str = "rsl_rl.models.encoder_model:EncoderMoEModel"
-    num_moe_experts: int = 5
+    num_moe_experts: int = 4
     moe_gate_hidden_dims: list[int] = []
     hidden_dims: list[int] = [256, 128, 64]
     obs_normalization: bool = False
     activation: str = "elu"
     encoder_obs_groups: list[str] = ["depth"]
     encoder_cfg: dict = {
-        "channels": [4],
-        "kernel_sizes": [3],
-        "strides": [1],
-        "hidden_sizes": [256, 256],
-        "output_size": 128,
-        "paddings": [1],
+        "channels": [16, 32, 64],
+        "kernel_sizes": [3, 3, 3],
+        "strides": [1, 2, 1],
+        "hidden_sizes": [256],
+        "output_size": 256,
+        "paddings": [1, 1, 1],
         "nonlinearity": "ReLU",
         "use_maxpool": True,
         "last_activation": "ReLU",
+        "input_dtype": "uint8",
+        "input_range": (0.0, 255.0),
     }
 
 
@@ -66,20 +68,26 @@ class RPOParkourAmpRunnerCfg(RslRlOnPolicyRunnerCfg):
     class_name = "OnPolicyRunner"
     export_policy_func: str = "robolab.tasks.manager_based.parkour.agents.exporter:export_policy"
     num_steps_per_env = 24
+    compact_depth_history = True
+    depth_history_offsets = (35, 30, 25, 20, 15, 10, 5, 0)
     max_iterations = 30000
     save_interval = 500
     experiment_name = "rpo_parkour"
     wandb_project = "rpo_parkour"
     obs_groups = {
         "actor": ["policy", "depth"],
-        "critic": ["critic", "depth"],
+        "critic": ["critic"],
         "discriminator": ["disc"],
         "discriminator_demonstration": ["disc_demo"],
     }
     actor = RslRlEncoderMoEModelCfg(
         distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0, std_type="log")
     )
-    critic = RslRlEncoderMoEModelCfg()
+    critic = RslRlMLPModelCfg(
+        hidden_dims=[512, 256, 128],
+        activation="elu",
+        obs_normalization=True,
+    )
     algorithm = RslRlPpoAmpAlgorithmCfg(
         class_name="rsl_rl.algorithms.ppo_amp:PPOAMP",
         value_loss_coef=1.0,
@@ -97,7 +105,7 @@ class RPOParkourAmpRunnerCfg(RslRlOnPolicyRunnerCfg):
         symmetry_cfg=RslRlSymmetryCfg(
             use_data_augmentation=True,
             use_mirror_loss=True,
-            mirror_loss_coeff=0.15,
+            mirror_loss_coeff=0.2,
             data_augmentation_func=rpo.compute_symmetric_states
         ),
         amp_cfg=RslRlAmpCfg(

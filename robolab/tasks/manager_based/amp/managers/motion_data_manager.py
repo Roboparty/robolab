@@ -35,7 +35,6 @@ import os
 import numpy as np
 import enum
 import pickle
-import joblib
 import torch
 from prettytable import PrettyTable
 from typing import TYPE_CHECKING
@@ -104,51 +103,48 @@ class MotionDataTerm(ManagerTermBase):
             # load the motion data file
             motion_path = os.path.join(self.cfg.motion_data_dir, motion_file)
             print(f"[Motion Data Manager] Loading motion data from {motion_path}...")
-            try:
-                with open(motion_path, "rb") as f:
-                    motion_raw_data = pickle.load(f)
-            except (pickle.UnpicklingError, EOFError, AttributeError, ImportError, IndexError):
-                motion_raw_data = joblib.load(motion_path)
+            with open(motion_path, "rb") as f:
+                motion_raw_data = pickle.load(f)
             if not isinstance(motion_raw_data, dict):
                 raise ValueError(f"Motion data file {motion_file} does not contain a valid dictionary.")
-            
-            # Some info about the motion
-            fps = motion_raw_data["fps"]
+
+            # Normalize clip rate before velocities / key-body FK (LIVE parity).
+            src_fps = float(np.asarray(motion_raw_data["fps"]).reshape(-1)[0])
+            if self.cfg.target_fps is not None and abs(src_fps - float(self.cfg.target_fps)) > 1e-6:
+                motion_raw_data = self._resample_motion_raw(motion_raw_data, float(self.cfg.target_fps))
+                print(
+                    f"[Motion Data Manager] Resampled {motion_file}: {src_fps:g} Hz -> "
+                    f"{self.cfg.target_fps:g} Hz ({len(motion_raw_data['root_pos'])} frames)"
+                )
+
+            fps = float(np.asarray(motion_raw_data["fps"]).reshape(-1)[0])
             dt = 1.0 / fps
             num_frames = len(motion_raw_data["root_pos"])
             if num_frames < 2:
                 raise ValueError(f"[MotionLoader] Motion has only {num_frames} frames, cannot compute velocity.")
             duration = dt * (num_frames - 1)
             loop_mode = motion_raw_data["loop_mode"]
-            
+
             self.motion_durations.append(duration)
             self.motion_fps.append(fps)
             self.motion_dt.append(dt)
             self.motion_num_frames.append(num_frames)
             self.motion_loop_modes.append(loop_mode)
             self.motion_weights.append(motion_weight)
-            
-            # Get the motion data
-            
-            # root position in world frame, shape (num_frames, 3)
-            root_pos_w = torch.from_numpy(motion_raw_data["root_pos"]).to(self.device).float()
+
+            root_pos_w = torch.from_numpy(np.asarray(motion_raw_data["root_pos"])).to(self.device).float()
             root_pos_w.requires_grad_(False)
-            # Convert legacy motion files once, before any runtime quaternion math.
-            root_quat = torch.from_numpy(motion_raw_data["root_rot"]).to(self.device).float()
+            root_quat = torch.from_numpy(np.asarray(motion_raw_data["root_rot"])).to(self.device).float()
             quaternion_order = str(np.asarray(motion_raw_data.get("quaternion_order", self.cfg.quaternion_order)).item())
             root_quat = quaternion_to_xyzw(root_quat, quaternion_order)
             root_quat.requires_grad_(False)
-            
-            # root velocity in world frame, shape (num_frames, 3)
+
             root_vel_w = vel_forward_diff(root_pos_w, dt)
             root_vel_w.requires_grad_(False)
-            
-            # root angular velocity in world frame, shape (num_frames, 3)
             root_ang_vel_w = ang_vel_from_quat_diff(root_quat, dt, in_frame="world")
             root_ang_vel_w.requires_grad_(False)
-            
-            # dof position, shape (num_frames, num_dofs)
-            dof_pos = torch.from_numpy(motion_raw_data["dof_pos"]).to(self.device).float()
+
+            dof_pos = torch.from_numpy(np.asarray(motion_raw_data["dof_pos"])).to(self.device).float()
             source_joint_names = motion_raw_data.get("joint_names", motion_raw_data.get("joint_order"))
             if source_joint_names is not None:
                 source_joint_names = list(source_joint_names)
@@ -158,22 +154,37 @@ class MotionDataTerm(ManagerTermBase):
                     raise ValueError(f"Motion {motion_file} is missing robot joints: {sorted(missing)}")
                 dof_pos = dof_pos[:, [source_joint_names.index(name) for name in target_joint_names]]
             dof_pos.requires_grad_(False)
-            
-            # dof velocity, shape (num_frames, num_dofs)
+
             dof_vel = vel_forward_diff(dof_pos, dt)
             dof_vel.requires_grad_(False)
-            
-            # key body position in world frame, shape (num_frames, num_key_bodies, 3)
-            key_body_pos_w = torch.from_numpy(motion_raw_data["key_body_pos"]).to(self.device).float()
-            source_body_names = motion_raw_data.get("key_body_names")
-            if source_body_names is not None and self.cfg.key_body_names is not None:
-                source_body_names = list(source_body_names)
-                missing = set(self.cfg.key_body_names) - set(source_body_names)
-                if missing:
-                    raise ValueError(f"Motion {motion_file} is missing key bodies: {sorted(missing)}")
-                key_body_pos_w = key_body_pos_w[:, [source_body_names.index(name) for name in self.cfg.key_body_names]]
-            key_body_pos_w.requires_grad_(False)
-            
+
+            # Key bodies: always Newton FK from dof/root (ignore pkl key_body cache).
+            requested_key_body_names = self.cfg.key_body_names
+            if requested_key_body_names is None:
+                raw_names = motion_raw_data.get("key_body_names")
+                requested_key_body_names = list(raw_names) if raw_names is not None else None
+            else:
+                requested_key_body_names = list(requested_key_body_names)
+            if requested_key_body_names is not None:
+                if not self.key_body_pos_w:
+                    self.key_body_names = requested_key_body_names
+                elif self.key_body_names != requested_key_body_names:
+                    raise ValueError(f"Inconsistent key-body order in {motion_file}.")
+                print(
+                    f"[Motion Data Manager] {motion_file}: computing "
+                    f"{len(requested_key_body_names)} key-body positions with Newton FK"
+                )
+                key_body_pos_w = self._compute_key_body_pos_w_with_newton(
+                    requested_key_body_names,
+                    motion_file,
+                    root_pos_w=root_pos_w,
+                    root_quat_xyzw=root_quat,
+                    joint_pos=dof_pos,
+                )
+            else:
+                key_body_pos_w = torch.from_numpy(np.asarray(motion_raw_data["key_body_pos"])).to(self.device).float()
+                key_body_pos_w.requires_grad_(False)
+
             self.root_pos_w.append(root_pos_w)
             self.root_quat.append(root_quat)
             self.root_vel_w.append(root_vel_w)
@@ -213,6 +224,156 @@ class MotionDataTerm(ManagerTermBase):
         
         return
          
+
+    @staticmethod
+    def _as_torch_tensor(value) -> torch.Tensor:
+        """Scene data may be a Torch tensor or a Newton wrapper with ``.torch``."""
+        return value if isinstance(value, torch.Tensor) else value.torch
+
+    @staticmethod
+    def _name_indices(source, target) -> list[int]:
+        source, target = list(source), list(target)
+        lookup = {name: i for i, name in enumerate(source)}
+        missing = set(target) - lookup.keys()
+        if missing:
+            raise ValueError(f"Motion is missing named entries: {sorted(missing)}")
+        return [lookup[name] for name in target]
+
+    @staticmethod
+    def _resample_motion_raw(data: dict, target_fps: float) -> dict:
+        """Uniformly resample a loaded AMP pkl clip to ``target_fps`` (lerp + slerp)."""
+        src_fps = float(np.asarray(data["fps"]).reshape(-1)[0])
+        n_src = len(data["root_pos"])
+        duration = (n_src - 1) / src_fps
+        n_dst = int(np.floor(duration * target_fps + 1e-6)) + 1
+        if n_dst < 2:
+            raise ValueError(
+                f"Resample to {target_fps:g} Hz produced {n_dst} frames "
+                f"from {n_src} @ {src_fps:g} Hz"
+            )
+        t_src = np.arange(n_src) / src_fps
+        t_dst = np.minimum(np.arange(n_dst) / target_fps, t_src[-1])
+        i0 = np.clip(np.searchsorted(t_src, t_dst, side="right") - 1, 0, n_src - 2)
+        i1 = i0 + 1
+        alpha = ((t_dst - t_src[i0]) * src_fps).astype(np.float32)
+
+        def lerp(x):
+            x = np.asarray(x, dtype=np.float32)
+            a = alpha.reshape((-1,) + (1,) * (x.ndim - 1))
+            return (1.0 - a) * x[i0] + a * x[i1]
+
+        def slerp(q):
+            q = np.asarray(q, dtype=np.float32)
+            q0, q1 = q[i0], q[i1]
+            dot = np.sum(q0 * q1, axis=-1, keepdims=True)
+            q1 = np.where(dot < 0.0, -q1, q1)
+            dot = np.abs(dot).clip(-1.0, 1.0)
+            a = alpha.reshape((-1,) + (1,) * (q.ndim - 1))
+            theta = np.arccos(dot)
+            sin_t = np.sin(theta)
+            small = sin_t < 1e-6
+            w0 = np.where(small, 1.0 - a, np.sin((1.0 - a) * theta) / np.where(small, 1.0, sin_t))
+            w1 = np.where(small, a, np.sin(a * theta) / np.where(small, 1.0, sin_t))
+            out = w0 * q0 + w1 * q1
+            return out / np.linalg.norm(out, axis=-1, keepdims=True).clip(1e-8, None)
+
+        out = dict(data)
+        for key, value in data.items():
+            arr = np.asarray(value)
+            if arr.ndim == 0 or arr.shape[0] != n_src or arr.dtype.kind not in "fc":
+                continue
+            out[key] = slerp(arr) if key in ("root_rot", "body_quat_w") else lerp(arr)
+        out["fps"] = float(target_fps)
+        return out
+
+    def _compute_key_body_pos_w_with_newton(
+        self,
+        requested_names: list[str],
+        motion_file: str,
+        *,
+        root_pos_w: torch.Tensor,
+        root_quat_xyzw: torch.Tensor,
+        joint_pos: torch.Tensor,
+    ) -> torch.Tensor:
+        """Replay dof/root into the live Newton articulation and read link origins.
+
+        Mirrors LIVE MotionDataTerm._compute_key_body_pos_w_with_newton so
+        changing KEY_BODY_NAMES does not require offline motion reconversion.
+        """
+        robot = self._env.scene["robot"]
+        backend_name = getattr(robot.data, "__backend_name__", None)
+        if backend_name != "newton":
+            raise RuntimeError(
+                f"{motion_file}: key-body FK requires the Newton backend; got {backend_name!r}."
+            )
+
+        body_names = list(robot.body_names)
+        try:
+            body_indices = self._name_indices(body_names, requested_names)
+        except ValueError as exc:
+            raise ValueError(
+                f"{motion_file}: requested key bodies are not present on the robot articulation"
+            ) from exc
+
+        num_frames = int(root_pos_w.shape[0])
+        num_envs = int(self._env.num_envs)
+        if num_envs < 1:
+            raise RuntimeError("Cannot compute motion FK without at least one environment")
+
+        env_origins = self._as_torch_tensor(self._env.scene.env_origins).to(
+            device=self.device, dtype=torch.float32
+        )[:, :3]
+        if env_origins.shape[0] < min(num_envs, num_frames):
+            raise RuntimeError("Scene environment origins do not cover the FK batch")
+
+        saved_root_state = self._as_torch_tensor(robot.data.root_link_state_w).clone()
+        saved_joint_pos = self._as_torch_tensor(robot.data.joint_pos).clone()
+        saved_joint_vel = self._as_torch_tensor(robot.data.joint_vel).clone()
+        key_body_pos_w = torch.empty(
+            (num_frames, len(requested_names), 3), device=self.device, dtype=torch.float32
+        )
+
+        try:
+            with torch.no_grad():
+                batch_size = min(num_envs, num_frames)
+                for start in range(0, num_frames, batch_size):
+                    end = min(start + batch_size, num_frames)
+                    env_ids = torch.arange(end - start, device=self.device, dtype=torch.long)
+                    origins = env_origins[env_ids]
+                    root_pose = torch.cat(
+                        (root_pos_w[start:end] + origins, root_quat_xyzw[start:end]), dim=-1
+                    )
+                    robot.write_root_pose_to_sim_index(root_pose=root_pose, env_ids=env_ids)
+                    robot.write_joint_position_to_sim_index(
+                        position=joint_pos[start:end], env_ids=env_ids
+                    )
+                    body_pos = self._as_torch_tensor(robot.data.body_pos_w)
+                    key_body_pos_w[start:end] = (
+                        body_pos[env_ids][:, body_indices, :] - origins.unsqueeze(1)
+                    )
+        finally:
+            with torch.no_grad():
+                restore_env_ids = torch.arange(
+                    saved_root_state.shape[0], device=self.device, dtype=torch.long
+                )
+                robot.write_root_link_pose_to_sim_index(
+                    root_pose=saved_root_state[:, :7], env_ids=restore_env_ids
+                )
+                robot.write_root_link_velocity_to_sim_index(
+                    root_velocity=saved_root_state[:, 7:], env_ids=restore_env_ids
+                )
+                # official Articulation: write_joint_state_to_sim(env_ids=...), not *_index
+                robot.write_joint_state_to_sim(
+                    position=saved_joint_pos,
+                    velocity=saved_joint_vel,
+                    env_ids=restore_env_ids,
+                )
+                _ = self._as_torch_tensor(robot.data.body_pos_w)
+
+        key_body_pos_w.requires_grad_(False)
+        return key_body_pos_w
+
+
     # Some helper functions
     
     def get_num_motions(self) -> int:

@@ -8,6 +8,7 @@ from isaaclab.utils.buffers import CircularBuffer
 class AsyncCircularBuffer(CircularBuffer):
     def __init__(self, max_len: int, batch_size: int, device: str):
         super().__init__(max_len, batch_size, device)
+        self._history_indices = torch.arange(max_len, device=device)[:, None]
 
     @property
     def buffer(self) -> torch.Tensor:
@@ -16,19 +17,10 @@ class AsyncCircularBuffer(CircularBuffer):
         return self.get_by_batch_ids()
 
     def get_by_batch_ids(self, batch_ids: Sequence[int] | None = None) -> torch.Tensor:
-        # Index seems too large, potentially needing speed optimization. But we may wait and see.
         batch_ids = self._ALL_INDICES if batch_ids is None else torch.as_tensor(batch_ids, device=self._device)
-        shifts = self.max_length - self._pointer - 1
-        selected_shifts = shifts if batch_ids is None else shifts[batch_ids]
-        selected_buf = self._buffer.clone() if batch_ids is None else self._buffer[:, batch_ids, ...].clone()
-        selected_batch_size = self._batch_size if batch_ids is None else batch_ids.size(0)
-        T = self.max_length
-        arange = torch.arange(T, device=self._device)  # (T,)
-        index = ((arange[:, None] - selected_shifts[None, :]) % T).long()  # (T, 1) - (1, selected_B) -> (T, selected_B)
-        extra_shape = selected_buf.shape[2:]  # (*D)
-        index = index.view(T, selected_batch_size, *([1] * len(extra_shape)))  # (T, selected_B, 1....)
-        index = index.expand(T, selected_batch_size, *extra_shape)  # (T, selected_B, *D)
-        buf = torch.gather(selected_buf, dim=0, index=index)
+        index = (self._history_indices + self._pointer[batch_ids][None, :] + 1) % self.max_length
+        # Advanced indexing returns an independent snapshot without copying the entire ring first.
+        buf = self._buffer[index, batch_ids[None, :]]
         return torch.transpose(buf, dim0=0, dim1=1)
 
     def append(self, data: torch.Tensor, batch_ids: Sequence[int] | None = None):

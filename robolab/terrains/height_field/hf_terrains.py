@@ -82,32 +82,15 @@ def perlin_pyramid_sloped_terrain(difficulty: float, cfg: hf_terrains_cfg.Perlin
     # -- horizontal scale
     width_pixels = int(cfg.size[0] / cfg.horizontal_scale)
     length_pixels = int(cfg.size[1] / cfg.horizontal_scale)
-    # -- height
-    # we want the height to be 1/2 of the width since the terrain is a pyramid
     height_max = int(slope * cfg.size[0] / 2 / cfg.vertical_scale)
-    # -- center of the terrain
-    center_x = int(width_pixels / 2)
-    center_y = int(length_pixels / 2)
-
-    # create a meshgrid of the terrain
-    x = np.arange(0, width_pixels)
-    y = np.arange(0, length_pixels)
+    center_x, center_y = int(width_pixels / 2), int(length_pixels / 2)
+    x, y = np.arange(width_pixels), np.arange(length_pixels)
     xx, yy = np.meshgrid(x, y, sparse=True)
-    # offset the meshgrid to the center of the terrain
-    xx = (center_x - np.abs(center_x - xx)) / center_x
-    yy = (center_y - np.abs(center_y - yy)) / center_y
-    # reshape the meshgrid to be 2D
-    xx = xx.reshape(width_pixels, 1)
-    yy = yy.reshape(1, length_pixels)
-    # create a sloped surface
-    hf_raw = np.zeros((width_pixels, length_pixels))
+    xx = ((center_x - np.abs(center_x - xx)) / center_x).reshape(width_pixels, 1)
+    yy = ((center_y - np.abs(center_y - yy)) / center_y).reshape(1, length_pixels)
     hf_raw = height_max * xx * yy
-
-    # create a flat platform at the center of the terrain
     platform_width = int(cfg.platform_width / cfg.horizontal_scale / 2)
-    # get the height of the platform at the corner of the platform
-    x_pf = width_pixels // 2 - platform_width
-    y_pf = length_pixels // 2 - platform_width
+    x_pf, y_pf = width_pixels // 2 - platform_width, length_pixels // 2 - platform_width
     z_pf = hf_raw[x_pf, y_pf]
     hf_raw = np.clip(hf_raw, min(0, z_pf), max(0, z_pf))
     if cfg.perlin_cfg is not None:
@@ -166,25 +149,17 @@ def perlin_pyramid_stairs_terrain(difficulty: float, cfg: hf_terrains_cfg.Perlin
     # -- platform
     platform_width = round(cfg.platform_width / cfg.horizontal_scale)
 
-    # create a terrain with a flat platform at the center
     hf_raw = np.zeros((width_pixels, length_pixels))
-    # add the steps
     current_step_height = 0
     start_x, start_y = 0, 0
     stop_x, stop_y = width_pixels, length_pixels
     while (stop_x - start_x) > platform_width and (stop_y - start_y) > platform_width:
-        # increment position
-        # -- x
         start_x += step_width
         stop_x -= step_width
-        # -- y
         start_y += step_width
         stop_y -= step_width
-        # increment height
         current_step_height += step_height
-        # add the step
         hf_raw[start_x:stop_x, start_y:stop_y] = current_step_height
-
     if cfg.perlin_cfg is not None:
         perlin_cfg = cfg.perlin_cfg
         perlin_cfg.size = cfg.size
@@ -275,6 +250,117 @@ def perlin_pyramid_stairs_ground_aligned_terrain(difficulty: float, cfg: hf_terr
     # round off the heights to the nearest vertical step
     return np.rint(hf_raw).astype(np.int16)
 
+
+@generate_wall
+@height_field_to_mesh
+def perlin_platforms_terrain(
+    difficulty: float,
+    cfg: hf_terrains_cfg.PerlinPlatformsTerrainCfg,
+) -> np.ndarray:
+    """Generate alternating raised and flat concentric square rings.
+
+    The terrain center and border remain at zero height. Starting immediately
+    outside the center, raised rings of ``band_width`` (or ``band_width_range``
+    interpolated by difficulty) alternate with flat rings of ``gap_width``
+    (defaults to the current deck width). Incomplete outer decks are omitted so
+    raised width is never clipped. All raised rings share the height
+    interpolated from ``platform_height_range`` by ``difficulty``.
+    """
+    min_height, max_height = cfg.platform_height_range
+    if min_height < 0.0 or max_height < min_height:
+        raise ValueError(
+            "platform_height_range must be non-negative and increasing, "
+            f"got {cfg.platform_height_range}."
+        )
+    if cfg.band_width_range is not None:
+        min_band, max_band = cfg.band_width_range
+        if min_band <= 0.0 or max_band < min_band:
+            raise ValueError(
+                "band_width_range must be positive and increasing, "
+                f"got {cfg.band_width_range}."
+            )
+        band_width = min_band + difficulty * (max_band - min_band)
+    else:
+        band_width = cfg.band_width
+        if band_width <= 0.0:
+            raise ValueError(f"band_width must be positive, got {band_width}.")
+
+    width_pixels = int(cfg.size[0] / cfg.horizontal_scale)
+    length_pixels = int(cfg.size[1] / cfg.horizontal_scale)
+    gap_width = band_width if cfg.gap_width is None else cfg.gap_width
+    if cfg.gap_width is None:
+        band_pixels = round(band_width / cfg.horizontal_scale)
+        gap_pixels = band_pixels
+    else:
+        # Vertices sit on heightfield samples, so n samples → top width (n-1)*scale.
+        # Gap between facing top edges is (n_gap+1)*scale.
+        band_pixels = max(round(band_width / cfg.horizontal_scale) + 1, 2)
+        gap_pixels = max(round(gap_width / cfg.horizontal_scale) - 1, 1)
+    center_pixels = round(cfg.platform_width / cfg.horizontal_scale)
+    border_pixels = round(cfg.border_width / cfg.horizontal_scale)
+    if band_pixels < 1:
+        raise ValueError("band_width must be at least one horizontal grid cell.")
+    if gap_pixels < 1:
+        raise ValueError("gap_width must be at least one horizontal grid cell.")
+    if center_pixels < 1:
+        raise ValueError("platform_width must be at least one horizontal grid cell.")
+    if border_pixels < 0:
+        raise ValueError("border_width must be non-negative.")
+    if center_pixels + 2 * border_pixels >= min(width_pixels, length_pixels):
+        raise ValueError(
+            "platform_width and border_width leave no room for concentric rings."
+        )
+
+    height = min_height + difficulty * (max_height - min_height)
+    height_pixels = round(height / cfg.vertical_scale)
+
+    center_x = 0.5 * (width_pixels - 1)
+    center_y = 0.5 * (length_pixels - 1)
+    distance_x = np.maximum(
+        np.abs(np.arange(width_pixels, dtype=np.float64) - center_x)
+        - 0.5 * center_pixels,
+        0.0,
+    )
+    distance_y = np.maximum(
+        np.abs(np.arange(length_pixels, dtype=np.float64) - center_y)
+        - 0.5 * center_pixels,
+        0.0,
+    )
+    square_distance = np.maximum(distance_x[:, None], distance_y[None, :])
+    outside_center = square_distance > 0.0
+    period_pixels = band_pixels + gap_pixels
+    phase = np.mod(square_distance, period_pixels)
+    ring_start = square_distance - phase
+    max_sq = (
+        0.5 * (min(width_pixels, length_pixels) - 1)
+        - border_pixels
+        - 0.5 * center_pixels
+    )
+    raised_ring = (
+        outside_center
+        & (phase < band_pixels)
+        & (ring_start + band_pixels <= max_sq + 1e-6)
+    )
+
+    interior = np.ones((width_pixels, length_pixels), dtype=bool)
+    if border_pixels > 0:
+        interior[:border_pixels, :] = False
+        interior[-border_pixels:, :] = False
+        interior[:, :border_pixels] = False
+        interior[:, -border_pixels:] = False
+
+    hf_raw = np.zeros((width_pixels, length_pixels), dtype=np.float64)
+    hf_raw[raised_ring & interior] = height_pixels
+
+    if cfg.perlin_cfg is not None:
+        perlin_cfg = cfg.perlin_cfg
+        perlin_cfg.size = cfg.size
+        perlin_cfg.horizontal_scale = cfg.horizontal_scale
+        perlin_cfg.vertical_scale = cfg.vertical_scale
+        perlin_cfg.slope_threshold = cfg.slope_threshold
+        hf_raw += generate_perlin_noise(difficulty, perlin_cfg)
+
+    return np.rint(hf_raw).astype(np.int16)
 
 @generate_wall
 @height_field_to_mesh

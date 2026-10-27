@@ -171,6 +171,7 @@ class RPOAmpEnvCfg(AmpEnvCfg):
         # motion data
         # ------------------------------------------------------
         self.motion_data.motion_dataset.key_body_names = KEY_BODY_NAMES
+        self.motion_data.motion_dataset.target_fps = 120
         self.motion_data.motion_dataset.motion_data_dir = os.path.join(
             ROBOLAB_ROOT_DIR, "data", "motions", "rpo_amp"
         )

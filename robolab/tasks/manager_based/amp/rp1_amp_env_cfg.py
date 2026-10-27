@@ -173,6 +173,7 @@ class RP1AmpEnvCfg(AmpEnvCfg):
         self.actions.joint_pos.preserve_order = True
         self.motion_data.motion_dataset.key_body_names = KEY_BODY_NAMES
         self.motion_data.motion_dataset.quaternion_order = "wxyz"
+        self.motion_data.motion_dataset.target_fps = 120
         self.observations.disc.key_body_pos_b.params = {
             "asset_cfg": SceneEntityCfg("robot", body_names=KEY_BODY_NAMES, preserve_order=True),
         }

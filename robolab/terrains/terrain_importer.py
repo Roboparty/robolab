@@ -148,3 +148,48 @@ class TerrainImporter(TerrainImporterBase):
             pass
         else:
             return super().configure_env_origins(origins)
+
+    def _compute_env_origins_curriculum(self, num_envs: int, origins: torch.Tensor) -> torch.Tensor:
+        """Compute env origins; optionally allocate columns by sub-terrain proportion.
+
+        When ``terrain_generator.one_col_per_subterrain`` is True, environment counts follow
+        each sub-terrain's ``proportion``. Otherwise, environments are split uniformly across
+        columns (Isaac Lab default).
+        """
+        # extract number of rows and cols
+        num_rows, num_cols = origins.shape[:2]
+        # maximum initial level possible for the terrains
+        if self.cfg.max_init_terrain_level is None:
+            max_init_level = num_rows - 1
+        else:
+            max_init_level = min(self.cfg.max_init_terrain_level, num_rows - 1)
+        # store maximum terrain level possible
+        self.max_terrain_level = num_rows
+        # define all terrain levels and types available
+        self.terrain_levels = torch.randint(0, max_init_level + 1, (num_envs,), device=self.device)
+
+        terrain_gen_cfg = self.cfg.terrain_generator
+        if terrain_gen_cfg is not None and getattr(terrain_gen_cfg, "one_col_per_subterrain", False):
+            # one column per sub-terrain: allocate envs by normalized proportion
+            proportions = np.array(
+                [sub_cfg.proportion for sub_cfg in terrain_gen_cfg.sub_terrains.values()], dtype=np.float64
+            )
+            proportions /= np.sum(proportions)
+            raw = proportions * num_envs
+            counts = np.floor(raw).astype(np.int64)
+            remainder = num_envs - int(counts.sum())
+            if remainder > 0:
+                counts[np.argsort(-(raw - counts))[:remainder]] += 1
+            self.terrain_types = torch.repeat_interleave(
+                torch.arange(num_cols, device=self.device),
+                torch.as_tensor(counts, device=self.device, dtype=torch.long),
+            )
+        else:
+            self.terrain_types = torch.div(
+                torch.arange(num_envs, device=self.device), (num_envs / num_cols), rounding_mode="floor"
+            ).to(torch.long)
+
+        # create tensor based on number of environments
+        env_origins = torch.zeros(num_envs, 3, device=self.device)
+        env_origins[:] = origins[self.terrain_levels, self.terrain_types]
+        return env_origins
