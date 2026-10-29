@@ -13,9 +13,9 @@ from isaaclab_tasks.utils import PresetCfg
 class PhysicsPresetCfg(PresetCfg):
     """Select PhysX or the Newton MJWarp solver with ``physics=NAME``.
 
-    ``njmax`` and ``nconmax`` are allocated per MuJoCo world.  The values
-    below cover the flat RPO/RP1 and BeyondMimic workloads without reserving
-    the much larger legacy rough-terrain budget for every environment.
+    ``njmax`` limits constraints per world; ``nconmax`` contributes to the
+    contact pool shared by all worlds. Keep headroom for resets and falls,
+    which need more constraints than a trained walking policy.
     """
 
     isaacsim_physx: PhysxCfg = PhysxCfg(gpu_max_rigid_patch_count=10 * 2**15)
@@ -25,10 +25,8 @@ class PhysicsPresetCfg(PresetCfg):
             cone="pyramidal",
             impratio=1.0,
             update_data_interval=1,
-            # RP1 self-contact can reach about 200 constraints in one world;
-            # 256 leaves headroom while remaining below the old 512 budget.
-            njmax=256,
-            nconmax=32,
+            njmax=768,
+            nconmax=64,
         ),
         num_substeps=1,
     )
@@ -39,9 +37,6 @@ class PhysicsPresetCfg(PresetCfg):
 class RoughPhysicsPresetCfg(PhysicsPresetCfg):
     """Use Newton mesh contacts for procedural rough terrain."""
 
-    # Rough mesh contacts need more headroom than a plane.  RP1 rough
-    # self-contact reaches about 400 constraints in one world, so 512 keeps
-    # a margin while halving the legacy 1024/512 budget.
     isaacsim_physx: PhysxCfg = PhysxCfg(
         gpu_max_rigid_patch_count=10 * 2**15,
         gpu_collision_stack_size=2**29,
@@ -52,13 +47,13 @@ class RoughPhysicsPresetCfg(PhysicsPresetCfg):
             integrator="implicitfast",
             cone="pyramidal",
             impratio=1.0,
-            update_data_interval=2,
-            njmax=512,
-            nconmax=64,
+            update_data_interval=1,
+            njmax=1024,
+            nconmax=128,
             use_mujoco_contacts=False,
         ),
         collision_cfg=NewtonCollisionPipelineCfg(max_triangle_pairs=5_000_000),
         default_shape_cfg=NewtonShapeCfg(margin=0.0, ke=160000.0, kd=1100.0),
-        num_substeps=2,
+        num_substeps=1,
     )
     default: NewtonCfg = newton_mjwarp
