@@ -62,7 +62,7 @@ for sub_terrain_name, sub_terrain_cfg in ROUGH_TERRAINS_CFG_PLAY.sub_terrains.it
 
 
 @configclass
-class RPOParkourRoughEnvCfg(ParkourEnvCfg):
+class RPOParkourEnvCfg(ParkourEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         self.scene.terrain.terrain_generator = ROUGH_TERRAINS_CFG
@@ -139,7 +139,7 @@ class RPOParkourRoughEnvCfg(ParkourEnvCfg):
 
 
 @configclass
-class RPOParkourRoughEnvCfg_PLAY(RPOParkourRoughEnvCfg):
+class RPOParkourEnvCfg_PLAY(RPOParkourEnvCfg):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
