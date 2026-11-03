@@ -232,7 +232,7 @@ class RP1AmpEnvCfg(AmpEnvCfg):
         # joint
         self.rewards.joint_vel_l2.weight = -2e-4
         self.rewards.joint_acc_l2.weight = -5e-7
-        self.rewards.action_rate_l2.weight = -0.2
+        self.rewards.action_rate_l2.weight = -0.01
         self.rewards.joint_pos_limits.weight = -10.0
         self.rewards.joint_energy.weight = -1e-4
         self.rewards.joint_torques_l2.weight = -1e-5

@@ -6,8 +6,6 @@
 from isaaclab.utils import configclass
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.terrains.config.rough import ROUGH_TERRAINS_CFG as ISAACLAB_ROUGH_TERRAINS_CFG
-from isaaclab_physx.physics import PhysxCfg
 
 from robolab.assets.robots.roboparty import RP1_24DOF_CFG, RP1_BODY_ORDER
 
@@ -15,7 +13,7 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from .base_config import BaseEnvCfg, RewardCfg
 from . import mdp
 from .scene_cfg import SceneCfg, configure_self_contact_sensors
-from robolab.utils.physics import PhysicsPresetCfg, RoughPhysicsPresetCfg
+from .terrain_generator_cfg import GRAVEL_TERRAINS_CFG, ROUGH_TERRAINS_CFG
 
 
 @configclass
@@ -25,7 +23,7 @@ class RP1SceneCfg(SceneCfg):
     def __init__(self, config, physics_dt, step_dt):
         super().__init__(config=config, physics_dt=physics_dt, step_dt=step_dt)
         configure_self_contact_sensors(self, "contact_sensor", physics_dt, RP1_BODY_ORDER)
-        if config.height_scanner.enable_height_scan:
+        if config.terrain_type == "generator" or config.height_scanner.enable_height_scan:
             base_path = "{ENV_REGEX_NS}/Robot/Geometry/base_link"
             for side in ("left", "right"):
                 scanner = getattr(self, f"{side}_feet_scanner")
@@ -34,10 +32,11 @@ class RP1SceneCfg(SceneCfg):
                     f"{side}_knee_link/{side}_ankle_pitch_link/{side}_ankle_roll_link"
                 )
                 scanner.debug_vis = False
-            self.height_scanner.prim_path = base_path
         else:
             self.left_feet_scanner = None
             self.right_feet_scanner = None
+        if config.height_scanner.enable_height_scan:
+            self.height_scanner.prim_path = base_path
 
 
 @configclass
@@ -50,7 +49,7 @@ class RP1RewardCfg(RewardCfg):
     joint_torques_l2 = RewTerm(func=mdp.joint_torques_l2, weight=-1e-05, params={})
     joint_vel_l2 = RewTerm(func=mdp.joint_vel_l2, weight=-0.0002, params={})
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-5e-07, params={})
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.2, params={"zero_on_reset": True})
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.02, params={"zero_on_reset": True})
     action_smoothness_l2 = RewTerm(func=mdp.action_jerk_l2, weight=-0.02)
     joint_rated_velocity = RewTerm(func=mdp.joint_rated_velocity_limit, weight=-0.05)
     joint_rated_effort = RewTerm(func=mdp.joint_rated_effort_limit, weight=-0.04)
@@ -206,6 +205,8 @@ class RP1RewardCfg(RewardCfg):
             "asset_cfg": SceneEntityCfg(
                 "robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"], preserve_order=True
             ),
+            "sensor_cfg1": SceneEntityCfg("left_feet_scanner"),
+            "sensor_cfg2": SceneEntityCfg("right_feet_scanner"),
             "ankle_height": 0.04,
             "threshold": 0.02,
         },
@@ -232,11 +233,10 @@ class RP1FlatEnvCfg(BaseEnvCfg):
         self.noise.add_height_scan_noise = False
         self.normalization.clip_observations = float("inf")
         self.normalization.clip_actions = float("inf")
-        self.scene_context.terrain_type = "plane"
+        self.scene_context.terrain_type = "generator"
+        self.scene_context.terrain_generator = GRAVEL_TERRAINS_CFG
         self.scene_context.robot = RP1_24DOF_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene_context.height_scanner.prim_body_name = "base_link"
-        self.sim.physics = PhysicsPresetCfg()
-        self.sim.physics.isaacsim_physx = PhysxCfg()
         self.robot.terminate_contacts_body_names = [r"^(?!left_ankle_roll_link$)(?!right_ankle_roll_link$).+$"]
         self.robot.feet_body_names = ["left_ankle_roll_link", "right_ankle_roll_link"]
         self.events.add_base_mass.params["asset_cfg"].body_names = ["waist_yaw_link"]
@@ -266,11 +266,5 @@ class RP1RoughEnvCfg(RP1FlatEnvCfg):
         self.state_space = 993
         self.scene_context.num_envs = 8192
         self.scene_context.height_scanner.enable_height_scan = True
-        self.scene_context.terrain_type = "generator"
-        self.scene_context.terrain_generator = ISAACLAB_ROUGH_TERRAINS_CFG.copy()
-        self.scene_context.terrain_generator.curriculum = True
-        self.scene_context.terrain_generator.horizontal_scale = 0.1
-        self.sim.physics = RoughPhysicsPresetCfg()
+        self.scene_context.terrain_generator = ROUGH_TERRAINS_CFG
         self.scene = RP1SceneCfg(config=self.scene_context, physics_dt=self.sim.dt, step_dt=self.decimation * self.sim.dt)
-        self.reward.feet_height.params["sensor_cfg1"] = SceneEntityCfg("left_feet_scanner")
-        self.reward.feet_height.params["sensor_cfg2"] = SceneEntityCfg("right_feet_scanner")

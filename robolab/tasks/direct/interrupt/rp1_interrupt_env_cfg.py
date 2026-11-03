@@ -52,7 +52,7 @@ class RP1InterruptRewardCfg(RewardCfg):
     joint_torques_l2 = RewTerm(func=mdp.joint_torques_l2, weight=-1e-05, params={})
     joint_vel_l2 = RewTerm(func=mdp.joint_vel_l2, weight=-0.0002, params={})
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-5e-07, params={})
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.2, params={"zero_on_reset": True})
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.02, params={"zero_on_reset": True})
     action_smoothness_l2 = RewTerm(func=mdp.action_jerk_l2, weight=-0.02)
     joint_rated_velocity = RewTerm(func=mdp.joint_rated_velocity_limit, weight=-0.05)
     joint_rated_effort = RewTerm(func=mdp.joint_rated_effort_limit, weight=-0.04)
