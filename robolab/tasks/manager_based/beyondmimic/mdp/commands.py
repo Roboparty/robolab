@@ -352,6 +352,8 @@ class MotionCommand(CommandTerm):
         )
         self.robot.write_joint_position_to_sim_index(position=joint_pos[env_ids], env_ids=env_ids)
         self.robot.write_joint_velocity_to_sim_index(velocity=joint_vel[env_ids], env_ids=env_ids)
+        # Reset-time scene writes must not prime actuator delays with the previous pose target.
+        self.robot.actuators.target_command.set_position_index(value=joint_pos[env_ids], env_ids=env_ids)
         self.robot.write_root_pose_to_sim_index(
             root_pose=torch.cat([root_pos[env_ids], root_ori[env_ids]], dim=-1), env_ids=env_ids,
         )

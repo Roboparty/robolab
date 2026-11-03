@@ -1,7 +1,7 @@
 # Copyright (c) 2025-2026, The RoboLab Project Developers.
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Roboparty delayed PD control with a measured motor torque-speed envelope."""
+"""Roboparty delayed PD control with torque-speed output limits."""
 
 from __future__ import annotations
 
@@ -21,11 +21,13 @@ def dc_motor_envelope(
     velocity_limit: torch.Tensor,
     max_motor_effort: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return four-quadrant effort bounds, including the peak-torque plateau."""
-    corner = velocity_limit * (1.0 + max_motor_effort / saturation_effort)
-    velocity = joint_vel.clamp(min=-corner, max=corner)
-    upper = torch.minimum(saturation_effort * (1.0 - velocity / velocity_limit), max_motor_effort)
-    lower = torch.maximum(saturation_effort * (-1.0 - velocity / velocity_limit), -max_motor_effort)
+    """Limit driving torque with speed while keeping zero effort feasible."""
+    upper = torch.minimum(
+        saturation_effort * (1.0 - joint_vel / velocity_limit), max_motor_effort
+    ).clamp_min(0.0)
+    lower = torch.maximum(
+        saturation_effort * (-1.0 - joint_vel / velocity_limit), -max_motor_effort
+    ).clamp_max(0.0)
     return lower, upper
 
 
