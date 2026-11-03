@@ -8,11 +8,11 @@ from isaaclab_rl.rsl_rl import RslRlMLPModelCfg, RslRlOnPolicyRunnerCfg, RslRlPp
 @configclass
 class RP1BeyondMimicPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 8000
+    max_iterations = 20000
     save_interval = 500
     experiment_name = "rp1_24dof_beyondmimic"
     wandb_project = "rp1_24dof_beyondmimic"
-    obs_groups = {"actor": ["student"], "critic": ["policy", "critic"]}
+    obs_groups = {"actor": ["policy"], "critic": ["critic"]}
     actor = RslRlMLPModelCfg(
         hidden_dims=[512, 256, 128], activation="elu", obs_normalization=True,
         distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0),

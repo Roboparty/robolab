@@ -11,7 +11,6 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.utils import configclass
-from isaaclab.utils.noise import UniformNoiseCfg as Unoise
 
 from robolab import ROBOLAB_ROOT_DIR
 from robolab.tasks.direct.base import mdp as locomotion_mdp
@@ -33,46 +32,39 @@ RP1_TRACKING_BODY_NAMES = (
 @configclass
 class RP1BeyondMimicObservationsCfg(ObservationsCfg):
     @configclass
-    class PolicyCfg(ObsGroup):
-        motion_preview = ObsTerm(func=mdp.motion_preview, params={"command_name": "motion"})
-        command = ObsTerm(func=mdp.generated_commands, params={"command_name": "motion"})
-        motion_anchor_pos_b = ObsTerm(
-            func=mdp.motion_anchor_pos_b, params={"command_name": "motion"},
-            noise=Unoise(n_min=-0.25, n_max=0.25),
-        )
-        motion_anchor_ori_b = ObsTerm(
-            func=mdp.motion_anchor_ori_b, params={"command_name": "motion"},
-            noise=Unoise(n_min=-0.05, n_max=0.05),
-        )
-        base_lin_vel = ObsTerm(func=mdp.base_lin_vel, noise=Unoise(n_min=-0.5, n_max=0.5))
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, noise=Unoise(n_min=-0.2, n_max=0.2))
-        projected_gravity = ObsTerm(func=mdp.projected_gravity, noise=Unoise(n_min=-0.05, n_max=0.05))
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.5, n_max=0.5))
-        actions = ObsTerm(func=mdp.last_action)
-
-        def __post_init__(self):
-            self.enable_corruption = True
-            self.concatenate_terms = True
-            self.history_length = 1
-            self.flatten_history_dim = True
-
-    @configclass
-    class StudentCfg(ObservationsCfg.PolicyCfg):
+    class PolicyCfg(ObservationsCfg.PolicyCfg):
         def __post_init__(self):
             super().__post_init__()
             self.history_length = 1
             self.flatten_history_dim = True
 
     @configclass
-    class CriticCfg(ObservationsCfg.CriticCfg):
+    class CriticCfg(ObsGroup):
+        motion_preview = ObsTerm(func=mdp.motion_preview, params={"command_name": "motion"})
+        command = ObsTerm(func=mdp.generated_commands, params={"command_name": "motion"})
+        motion_anchor_pos_b = ObsTerm(
+            func=mdp.motion_anchor_pos_b, params={"command_name": "motion"},
+        )
+        motion_anchor_ori_b = ObsTerm(
+            func=mdp.motion_anchor_ori_b, params={"command_name": "motion"},
+        )
+        base_lin_vel = ObsTerm(func=mdp.base_lin_vel)
+        base_ang_vel = ObsTerm(func=mdp.base_ang_vel)
+        projected_gravity = ObsTerm(func=mdp.projected_gravity)
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        actions = ObsTerm(func=mdp.last_action)
+
+        body_pos = ObsTerm(func=mdp.robot_body_pos_b, params={"command_name": "motion"})
+        body_ori = ObsTerm(func=mdp.robot_body_ori_b, params={"command_name": "motion"})
+
         def __post_init__(self):
+            self.enable_corruption = False
             self.concatenate_terms = True
             self.history_length = 1
             self.flatten_history_dim = True
 
     policy: PolicyCfg = PolicyCfg()
-    student: StudentCfg = StudentCfg()
     critic: CriticCfg = CriticCfg()
 
 
@@ -134,7 +126,7 @@ class RP1BeyondMimicEnvCfg(BeyondMimicEnvCfg):
         self.scene.robot = RP1_24DOF_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.contact_forces.history_length = 5
         configure_self_contact_sensors(self.scene, "contact_forces", self.sim.dt, RP1_BODY_ORDER)
-        self.rewards.action_rate_l2.weight = -0.2
+        self.rewards.action_rate_l2.weight = -0.02
         self.rewards.joint_acc_l2.weight = -5e-7
         self.actions.joint_pos.joint_names = list(RP1_JOINT_ORDER)
         self.actions.joint_pos.preserve_order = True
@@ -147,6 +139,17 @@ class RP1BeyondMimicEnvCfg(BeyondMimicEnvCfg):
         self.commands.motion.adaptive_kernel_size = 2
         self.commands.motion.reset_on_motion_end = True
         self.episode_length_s = 10.0
+        self.terminations.ee_body_pos = DoneTerm(
+            func=mdp.bad_motion_body_pos_z_only,
+            params={
+                "command_name": "motion",
+                "threshold": 0.25,
+                "body_names": [
+                    "left_ankle_roll_link", "right_ankle_roll_link",
+                    "left_wrist_link", "right_wrist_link",
+                ],
+            },
+        )
 
         self.events.randomize_rigid_body_material.params["restitution_range"] = (0.0, 0.0)
         self.events.add_base_mass.params["asset_cfg"].body_names = "waist_yaw_link"
@@ -154,10 +157,3 @@ class RP1BeyondMimicEnvCfg(BeyondMimicEnvCfg):
         self.events.base_com.params["asset_cfg"].body_names = "waist_yaw_link"
         self.events.base_com.params["com_range"] = {axis: (-0.04, 0.04) for axis in ("x", "y", "z")}
         self.events.scale_joint_parameters.params["friction_distribution_params"] = (0.8, 1.2)
-        self.terminations.ee_body_pos = DoneTerm(
-            func=mdp.bad_motion_body_pos_z_only,
-            params={
-                "command_name": "motion", "threshold": 0.25,
-                "body_names": ["left_ankle_roll_link", "right_ankle_roll_link", "left_elbow_link", "right_elbow_link"],
-            },
-        )
