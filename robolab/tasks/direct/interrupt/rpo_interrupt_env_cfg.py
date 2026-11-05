@@ -119,7 +119,7 @@ class RPORewardCfg(RewardCfg):
         weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*torso.*", ".*_elbow_yaw.*"]
+                "robot", joint_names=[".*torso.*"]
             )
         },
     )
@@ -133,7 +133,7 @@ class RPORewardCfg(RewardCfg):
         weight=-1.0,
         params={
             "asset_cfg1": SceneEntityCfg(
-                "robot", joint_names=[".*_arm_roll.*", ".*_arm_yaw.*", ".*_elbow_pitch.*"]
+                "robot", joint_names=[".*_arm_roll.*", ".*_arm_yaw.*", ".*_elbow.*"]
             ),
             "asset_cfg2": SceneEntityCfg(
                 "robot",
@@ -150,7 +150,7 @@ class RPORewardCfg(RewardCfg):
     upward = RewTerm(func=mdp.upward, weight=0.4)
     stand_still = RewTerm(func=mdp.stand_still_interrupt, weight=-0.2, params={"pos_cfg": SceneEntityCfg("robot", joint_names=[".*_arm.*", ".*_elbow.*", ".*torso.*", ".*_thigh.*", ".*_knee.*", ".*_ankle.*"]),
                                                                                "vel_cfg": SceneEntityCfg("robot", joint_names=[".*_arm.*", ".*_elbow.*", ".*torso.*", ".*_thigh.*", ".*_knee.*", ".*_ankle.*"]), 
-                                                                               "interrupt_cfg": SceneEntityCfg("robot", joint_names=[".*_arm.*", ".*_elbow_pitch.*"]),
+                                                                               "interrupt_cfg": SceneEntityCfg("robot", joint_names=[".*_arm.*", ".*_elbow.*"]),
                                                                                "pos_weight": 1.0, "vel_weight": 0.04})
     feet_height = RewTerm(
         func=mdp.feet_height,
@@ -160,7 +160,7 @@ class RPORewardCfg(RewardCfg):
                 "sensor_cfg1": SceneEntityCfg("left_feet_scanner"),
                 "sensor_cfg2": SceneEntityCfg("right_feet_scanner"),
                 "ankle_height":0.04,"threshold":0.02})
-    action_penalty = RewTerm(func=mdp.action_penalty_interrupt, weight=-0.1, params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_arm.*", ".*_elbow_pitch.*"])})
+    action_penalty = RewTerm(func=mdp.action_penalty_interrupt, weight=-0.1, params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_arm.*", ".*_elbow.*"])})
 
 
 @configclass
@@ -171,35 +171,42 @@ class RPOInterruptEnvCfg(BaseEnvCfg):
         use_interrupt = True,
         max_curriculum = 1.0,
         interrupt_ratio = 0.5,
+        arm_joint_signs=(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0),
         interrupt_joint_names = [
             "left_arm_pitch_joint",
             "left_arm_roll_joint",
             "left_arm_yaw_joint",
             "left_elbow_pitch_joint",
+            "left_elbow_yaw_joint",
             "right_arm_pitch_joint",
             "right_arm_roll_joint",
             "right_arm_yaw_joint",
             "right_elbow_pitch_joint",
+            "right_elbow_yaw_joint",
         ],
     interrupt_scale = [
             3.14, # Arm Pitch -1.57~1.57
             1.82, # Arm Roll, -0.25~1.57
             3.14, # Arm Yaw,  -1.57~1.57
             2.07, # Elbow Pitch, -0.5~1.57
+            3.14, # Elbow Yaw, -1.57~1.57
             3.14, # Arm Pitch -1.57~1.57
             1.82, # Arm Roll, -1.57~0.25
             3.14, # Arm Yaw,  -1.57~1.57
             2.07, # Elbow Pitch, -0.5~1.57
+            3.14, # Elbow Yaw, -1.57~1.57
         ], # Uniform Distribution Noise for each joint.
     interrupt_lower_bound = [
             -1.57,
             -0.25, 
             -1.57, 
             -0.5, 
+            -1.57,
             -1.57, 
             -1.57, 
             -1.57,
             -0.5,
+            -1.57,
         ],
         interrupt_init_range = 0.2,
         interrupt_update_step = 30,

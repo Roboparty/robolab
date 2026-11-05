@@ -46,17 +46,18 @@ def guard_interrupt_targets(targets, lower_bound, upper_bound, cfg, max_outward_
     With a curriculum roll ceiling, first move roll outward within that
     window to avoid turning a small perturbation into a large elbow change.
     """
-    if targets.ndim != 2 or targets.shape[-1] != 8:
-        raise ValueError("Arm interruptions require a [batch, 8] target.")
+    if targets.ndim != 2 or targets.shape[-1] not in (8, 10):
+        raise ValueError("Arm interruptions require a [batch, 8] or [batch, 10] target.")
     signs = targets.new_tensor(cfg.arm_joint_signs)
     clearance_cfg = cfg.arm_clearance
-    canonical = (targets * signs).reshape(-1, 2, 4)
-    bound_a = (lower_bound * signs).reshape(-1, 2, 4)
-    bound_b = (upper_bound * signs).reshape(-1, 2, 4)
+    joints_per_arm = targets.shape[-1] // 2
+    canonical = (targets * signs).reshape(-1, 2, joints_per_arm)
+    bound_a = (lower_bound * signs).reshape(-1, 2, joints_per_arm)
+    bound_b = (upper_bound * signs).reshape(-1, 2, joints_per_arm)
     lower = torch.minimum(bound_a, bound_b)
     upper = torch.maximum(bound_a, bound_b)
     canonical = canonical.clamp(lower, upper)
-    pitch, roll, yaw, elbow = canonical.unbind(dim=-1)
+    pitch, roll, yaw, elbow = canonical[..., :4].unbind(dim=-1)
     forward_yaw_margin = clearance_cfg.forward_yaw_margin * torch.sin(-pitch).clamp(min=0.0)
     if max_outward_roll is not None:
         if max_outward_roll.shape != roll.shape:
@@ -118,7 +119,7 @@ def guard_interrupt_targets(targets, lower_bound, upper_bound, cfg, max_outward_
     # Retain inward-yaw protection when both arms are brought toward the midline.
     inward_yaw_margin = forward_yaw_margin * (outward / clearance_cfg.roll_clearance).clamp(max=1.0)
     yaw_max = (clearance + inward_yaw_margin).clamp(max=upper[..., 2])
-    canonical = torch.stack(
+    canonical[..., :4] = torch.stack(
         (
             torch.minimum(pitch, pitch_max),
             roll,
@@ -127,7 +128,7 @@ def guard_interrupt_targets(targets, lower_bound, upper_bound, cfg, max_outward_
         ),
         dim=-1,
     )
-    return canonical.reshape(-1, 8) * signs
+    return canonical.reshape_as(targets) * signs
 
 class InterruptEnv(BaseEnv):
     def init_buffers(self):
@@ -306,13 +307,13 @@ class InterruptEnv(BaseEnv):
             return guard_interrupt_targets(targets, lower, upper, cfg) - default
 
         signs = targets.new_tensor(cfg.arm_joint_signs)
-        arms = (targets * signs).reshape(-1, 2, 4)
+        arms = (targets * signs).reshape(self.num_envs, 2, -1)
         low_roll = arms[..., 1] < cfg.low_roll_threshold
         arms[..., 2] = torch.where(
             low_roll, arms[..., 2].clamp(*cfg.low_roll_yaw_range), arms[..., 2]
         )
         arms[..., 2:4] = torch.where((arms[..., 1] < 0.0).unsqueeze(-1), 0.0, arms[..., 2:4])
-        targets = arms.reshape(-1, 8) * signs
+        targets = arms.reshape_as(targets) * signs
         return (targets - default).clamp(limits[..., 0] - default, limits[..., 1] - default)
 
     def curriculum_interrupt_clipping_mean_rad(self):
@@ -331,7 +332,7 @@ class InterruptEnv(BaseEnv):
             mean = default + noise_mean
             radius = self.cfg.interrupt.interrupt_init_range * self.interrupt_rad_curriculum.unsqueeze(-1)
             signs = default.new_tensor(self.cfg.interrupt.arm_joint_signs)
-            canonical_mean = (mean * signs).reshape(-1, 2, 4)
+            canonical_mean = (mean * signs).reshape(self.num_envs, 2, -1)
             roll_ceiling = canonical_mean[..., 1] + radius
             limits = self.robot.data.default_joint_pos_limits.torch[:, joint_ids]
             lower = torch.maximum(self.interrupt_lower_bound, limits[..., 0])

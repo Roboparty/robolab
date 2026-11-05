@@ -23,13 +23,15 @@ RP1_INTERRUPT_JOINT_NAMES = (
     "left_shoulder_roll_joint",
     "left_shoulder_yaw_joint",
     "left_elbow_joint",
+    "left_wrist_joint",
     "right_shoulder_pitch_joint",
     "right_shoulder_roll_joint",
     "right_shoulder_yaw_joint",
     "right_elbow_joint",
+    "right_wrist_joint",
 )
-RP1_INTERRUPT_LOWER_BOUND = (-3.14, -0.25, -1.57, -1.57, -3.14, -3.14, -1.57, -1.2)
-RP1_INTERRUPT_SCALE = (6.28, 3.39, 3.14, 2.77, 6.28, 3.39, 3.14, 2.77)
+RP1_INTERRUPT_LOWER_BOUND = (-3.14, -0.25, -1.57, -1.57, -2.56, -3.14, -3.14, -1.57, -1.2, -2.56)
+RP1_INTERRUPT_SCALE = (6.28, 3.39, 3.14, 2.77, 5.12, 6.28, 3.39, 3.14, 2.77, 5.12)
 
 
 RP1_INTERRUPT_GROUND_CONTACT_PATHS = (
@@ -151,7 +153,7 @@ class RP1InterruptRewardCfg(RewardCfg):
     joint_deviation_torso = RewTerm(
         func=mdp.joint_deviation_l1,
         weight=-1.0,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["waist_.*", ".*_wrist.*"])},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["waist_.*"])},
     )
     joint_deviation_legs = RewTerm(
         func=mdp.joint_deviation_l1,
@@ -167,7 +169,7 @@ class RP1InterruptRewardCfg(RewardCfg):
         weight=-1.0,
         params={
             "asset_cfg1": SceneEntityCfg(
-                "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*", ".*_elbow.*"]
+                "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*", ".*_elbow.*", ".*_wrist.*"]
             ),
             "asset_cfg2": SceneEntityCfg("robot", joint_names=[".*_shoulder_pitch.*"]),
             "weight1": 1.0,
@@ -191,7 +193,7 @@ class RP1InterruptRewardCfg(RewardCfg):
         params={
             "pos_cfg": SceneEntityCfg("robot", joint_names=[".*_joint"]),
             "vel_cfg": SceneEntityCfg("robot", joint_names=[".*_joint"]),
-            "interrupt_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder.*", ".*_elbow.*"]),
+            "interrupt_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder.*", ".*_elbow.*", ".*_wrist.*"]),
             "pos_weight": 1.0,
             "vel_weight": 0.04,
         },
@@ -215,7 +217,7 @@ class RP1InterruptRewardCfg(RewardCfg):
     action_penalty = RewTerm(
         func=mdp.action_penalty_interrupt,
         weight=-0.1,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder.*", ".*_elbow.*"])},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder.*", ".*_elbow.*", ".*_wrist.*"])},
     )
 
 
@@ -224,7 +226,7 @@ class RP1InterruptEnvCfg(BaseEnvCfg):
     reward = RP1InterruptRewardCfg()
 
     interrupt = InterruptCfg(
-        arm_joint_signs=(1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0),
+        arm_joint_signs=(1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0, -1.0, 1.0, -1.0),
         arm_clearance=ArmClearanceCfg(
             roll_clearance=0.2,
             backward_pitch_limit=0.2,
