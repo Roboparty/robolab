@@ -245,6 +245,7 @@ class RP1FlatEnvCfg(BaseEnvCfg):
         self.events.randomize_rigid_body_com.params["com_range"] = {axis: (-0.04, 0.04) for axis in ("x", "y", "z")}
         self.events.physics_material.params["restitution_range"] = (0.0, 0.0)
         self.events.physics_material.params["make_consistent"] = False
+        self.events.foot_torsional_friction = EventTerm(func=mdp.randomize_foot_torsional_friction, mode="startup")
         self.events.randomize_joint_default_pos = EventTerm(
             func=mdp.randomize_default_joint_pos, mode="startup",
         )

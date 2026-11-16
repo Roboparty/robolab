@@ -7,6 +7,7 @@ import os
 
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
+from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
@@ -152,6 +153,9 @@ class RP1BeyondMimicEnvCfg(BeyondMimicEnvCfg):
         )
 
         self.events.randomize_rigid_body_material.params["restitution_range"] = (0.0, 0.0)
+        self.events.foot_torsional_friction = EventTerm(
+            func=locomotion_mdp.randomize_foot_torsional_friction, mode="startup"
+        )
         self.events.add_base_mass.params["asset_cfg"].body_names = "waist_yaw_link"
         self.events.add_base_mass.params["mass_distribution_params"] = (-2.0, 2.0)
         self.events.base_com.params["asset_cfg"].body_names = "waist_yaw_link"

@@ -203,6 +203,9 @@ class RP1AmpEnvCfg(AmpEnvCfg):
         self.events.randomize_rigid_body_com.params["com_range"] = {axis: (-0.04, 0.04) for axis in ("x", "y", "z")}
         self.events.physics_material.params["restitution_range"] = (0.0, 0.0)
         self.events.physics_material.params["make_consistent"] = False
+        self.events.foot_torsional_friction = EventTerm(
+            func=locomotion_mdp.randomize_foot_torsional_friction, mode="startup"
+        )
         self.events.scale_joint_parameters.params["friction_distribution_params"] = (0.8, 1.2)
         self.events.randomize_joint_default_pos = EventTerm(
             func=locomotion_mdp.randomize_default_joint_pos, mode="startup",

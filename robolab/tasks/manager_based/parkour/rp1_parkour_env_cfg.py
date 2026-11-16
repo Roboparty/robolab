@@ -1,12 +1,13 @@
 import copy
 import os
 
-from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import EventTermCfg as EventTerm, SceneEntityCfg
 from isaaclab.utils import configclass
 
 from robolab import ROBOLAB_ROOT_DIR
 from robolab.assets.robots.roboparty import RP1_24DOF_CFG, RP1_BODY_ORDER
 from robolab.sensors import Grid3dPointsGeneratorCfg, get_link_prim_targets
+from robolab.tasks.direct.base import mdp as locomotion_mdp
 from robolab.tasks.manager_based.parkour.parkour_env_cfg import ROUGH_TERRAINS_CFG, ParkourEnvCfg
 
 
@@ -68,6 +69,9 @@ class RP1ParkourEnvCfg(ParkourEnvCfg):
         super().__post_init__()
         self.scene.terrain.terrain_generator = ROUGH_TERRAINS_CFG
         self.scene.robot = RP1_24DOF_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.events.foot_torsional_friction = EventTerm(
+            func=locomotion_mdp.randomize_foot_torsional_friction, mode="startup"
+        )
         self.scene.robot.init_state.pos = (0.0, 0.0, 0.85)
         self.scene.leg_volume_points.points_generator = FEET_VOLUME_POINTS_GRID
         self.scene.knee_volume_points.points_generator = KNEE_VOLUME_POINTS_GRID
